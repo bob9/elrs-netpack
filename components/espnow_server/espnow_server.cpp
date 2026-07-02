@@ -95,7 +95,7 @@ static int sendMSPViaEspnow(mspPacket_t *packet)
     return esp_err;
 }
 
-static void espnowSendCB(const uint8_t *mac_addr, esp_now_send_status_t status)
+static void espnowSendCB(const wifi_tx_info_t *mac_addr, esp_now_send_status_t status)
 {
     if (status == ESP_NOW_SEND_SUCCESS)
         xTaskNotify(espnowTaskHandle, (uint32_t)1, eSetValueWithOverwrite);

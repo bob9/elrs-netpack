@@ -5,4 +5,32 @@ menu "TCP Socket Server options"
         help
             Set TCP server listening port.
 
+    config USE_STATIC_IP
+        bool "Use static IP address instead of DHCP"
+        default n
+        help
+            Enable to configure a static IP address for the ethernet interface.
+            If disabled, DHCP will be used to obtain an IP address automatically.
+
+    config STATIC_IP_ADDR
+        string "Static IP address"
+        depends on USE_STATIC_IP
+        default "192.168.1.195"
+        help
+            Static IP address for the ethernet interface (e.g., 192.168.1.100).
+
+    config STATIC_NETMASK
+        string "Static netmask"
+        depends on USE_STATIC_IP
+        default "255.255.255.0"
+        help
+            Netmask for the static IP configuration (e.g., 255.255.255.0).
+
+    config STATIC_GATEWAY
+        string "Static gateway"
+        depends on USE_STATIC_IP
+        default "192.168.1.1"
+        help
+            Gateway IP address for the static IP configuration (e.g., 192.168.1.1).
+
 endmenu

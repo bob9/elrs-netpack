@@ -177,6 +177,26 @@ void run_tcp_server(void *pvParameters)
     eth_netif_cfg.route_prio -= 0 * 5;
     esp_netif_t *eth_netif = esp_netif_new(&cfg);
 
+#ifdef CONFIG_USE_STATIC_IP
+    // Configure static IP address
+    ESP_LOGI(TAG, "Configuring static IP address");
+    ESP_ERROR_CHECK(esp_netif_dhcpc_stop(eth_netif));
+
+    esp_netif_ip_info_t ip_info;
+    memset(&ip_info, 0, sizeof(esp_netif_ip_info_t));
+
+    ip_info.ip.addr = esp_ip4addr_aton(CONFIG_STATIC_IP_ADDR);
+    ip_info.netmask.addr = esp_ip4addr_aton(CONFIG_STATIC_NETMASK);
+    ip_info.gw.addr = esp_ip4addr_aton(CONFIG_STATIC_GATEWAY);
+
+    ESP_ERROR_CHECK(esp_netif_set_ip_info(eth_netif, &ip_info));
+    ESP_LOGI(TAG, "Static IP: " CONFIG_STATIC_IP_ADDR);
+    ESP_LOGI(TAG, "Netmask: " CONFIG_STATIC_NETMASK);
+    ESP_LOGI(TAG, "Gateway: " CONFIG_STATIC_GATEWAY);
+#else
+    ESP_LOGI(TAG, "Using DHCP to obtain IP address");
+#endif
+
     // Attach Ethernet driver to TCP/IP stack
     ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handles[0])));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, got_ip_event_handler, eth_netif));
