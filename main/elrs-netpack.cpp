@@ -4,8 +4,10 @@
 #include "freertos/ringbuf.h"
 #include "esp_netif.h"
 #include "esp_event.h"
+#include "nvs_flash.h"
 #include "espnow_server.h"
 #include "tcp_server.h"
+#include "net_config.h"
 #include "tasks.h"
 #include "msp.h"
 
@@ -21,6 +23,15 @@ extern "C" void app_main(void)
     // Create the buffers used for passing data across the different interfaces
     xRingReceivedSocket = xRingbufferCreateNoSplit(sizeof(mspPacket_t), 1000);
     xRingReceivedEspnow = xRingbufferCreateNoSplit(sizeof(mspPacket_t), 50);
+
+    // Initialize NVS before spawning the tasks that read settings from it
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
 
     // Create default event loop that running in background
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -40,4 +51,7 @@ extern "C" void app_main(void)
         .write = xRingReceivedSocket,
         .read = xRingReceivedEspnow};
     xTaskCreatePinnedToCore(run_tcp_server, "SocketManagerTask", 4096, (void *)&tcp_server_params, 10, &tcpTaskHandle, 1);
+
+    // Serial console on the USB port for setting network details (see 'netconfig')
+    net_config_start_console();
 }

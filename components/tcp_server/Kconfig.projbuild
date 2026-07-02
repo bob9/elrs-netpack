@@ -6,29 +6,31 @@ menu "TCP Socket Server options"
             Set TCP server listening port.
 
     config USE_STATIC_IP
-        bool "Use static IP address instead of DHCP"
+        bool "Use static IP address instead of DHCP (default)"
         default n
         help
-            Enable to configure a static IP address for the ethernet interface.
-            If disabled, DHCP will be used to obtain an IP address automatically.
+            Default network mode baked into the firmware. If disabled, DHCP is
+            used to obtain an IP address automatically. Either way, the mode and
+            address can be changed at runtime without reflashing: connect to the
+            USB serial console and use the 'netconfig' command. Runtime settings
+            are stored in NVS and override these defaults.
 
     config STATIC_IP_ADDR
-        string "Static IP address"
-        depends on USE_STATIC_IP
+        string "Default static IP address"
         default "192.168.1.195"
         help
             Static IP address for the ethernet interface (e.g., 192.168.1.100).
+            Only used when static IP mode is active and no address has been set
+            via the 'netconfig' serial console command.
 
     config STATIC_NETMASK
-        string "Static netmask"
-        depends on USE_STATIC_IP
+        string "Default static netmask"
         default "255.255.255.0"
         help
             Netmask for the static IP configuration (e.g., 255.255.255.0).
 
     config STATIC_GATEWAY
-        string "Static gateway"
-        depends on USE_STATIC_IP
+        string "Default static gateway"
         default "192.168.1.1"
         help
             Gateway IP address for the static IP configuration (e.g., 192.168.1.1).

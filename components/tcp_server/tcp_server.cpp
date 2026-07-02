@@ -16,6 +16,7 @@
 #include "tasks.h"
 #include "msp.h"
 #include "mdns.h"
+#include "net_config.h"
 
 #define INVALID_SOCKET -1
 #define LISTENER_MAX_QUEUE 1
@@ -72,6 +73,26 @@ static void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t
     ESP_LOGI(TAG, "ETHIP:" IPSTR, IP2STR(&ip_info->ip));
     ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info->netmask));
     ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+
+    if (!mdns_setup)
+        initialize_mdns(eth_netif);
+}
+
+/* With a static IP the DHCP client is stopped and IP_EVENT_ETH_GOT_IP is never
+   raised, so announce the address and start mDNS on link-up instead */
+static void eth_connected_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *data)
+{
+    esp_netif_t *eth_netif = (esp_netif_t *)arg;
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(eth_netif, &ip_info) != ESP_OK)
+        return;
+
+    ESP_LOGI(TAG, "Ethernet Link Up (static IP)");
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+    ESP_LOGI(TAG, "ETHIP:" IPSTR, IP2STR(&ip_info.ip));
+    ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info.netmask));
+    ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info.gw));
     ESP_LOGI(TAG, "~~~~~~~~~~~");
 
     if (!mdns_setup)
@@ -177,29 +198,34 @@ void run_tcp_server(void *pvParameters)
     eth_netif_cfg.route_prio -= 0 * 5;
     esp_netif_t *eth_netif = esp_netif_new(&cfg);
 
-#ifdef CONFIG_USE_STATIC_IP
-    // Configure static IP address
-    ESP_LOGI(TAG, "Configuring static IP address");
-    ESP_ERROR_CHECK(esp_netif_dhcpc_stop(eth_netif));
+    // Load network settings (set via the serial console and stored in NVS,
+    // falling back to menuconfig defaults)
+    net_config_t net_cfg;
+    net_config_load(&net_cfg);
 
-    esp_netif_ip_info_t ip_info;
-    memset(&ip_info, 0, sizeof(esp_netif_ip_info_t));
+    if (net_cfg.use_static)
+    {
+        ESP_LOGI(TAG, "Using static IP %s (netmask %s, gateway %s)", net_cfg.ip, net_cfg.netmask, net_cfg.gateway);
+        ESP_ERROR_CHECK(esp_netif_dhcpc_stop(eth_netif));
 
-    ip_info.ip.addr = esp_ip4addr_aton(CONFIG_STATIC_IP_ADDR);
-    ip_info.netmask.addr = esp_ip4addr_aton(CONFIG_STATIC_NETMASK);
-    ip_info.gw.addr = esp_ip4addr_aton(CONFIG_STATIC_GATEWAY);
+        esp_netif_ip_info_t ip_info;
+        memset(&ip_info, 0, sizeof(esp_netif_ip_info_t));
 
-    ESP_ERROR_CHECK(esp_netif_set_ip_info(eth_netif, &ip_info));
-    ESP_LOGI(TAG, "Static IP: " CONFIG_STATIC_IP_ADDR);
-    ESP_LOGI(TAG, "Netmask: " CONFIG_STATIC_NETMASK);
-    ESP_LOGI(TAG, "Gateway: " CONFIG_STATIC_GATEWAY);
-#else
-    ESP_LOGI(TAG, "Using DHCP to obtain IP address");
-#endif
+        ip_info.ip.addr = esp_ip4addr_aton(net_cfg.ip);
+        ip_info.netmask.addr = esp_ip4addr_aton(net_cfg.netmask);
+        ip_info.gw.addr = esp_ip4addr_aton(net_cfg.gateway);
+
+        ESP_ERROR_CHECK(esp_netif_set_ip_info(eth_netif, &ip_info));
+    }
+    else
+        ESP_LOGI(TAG, "Using DHCP to obtain IP address");
 
     // Attach Ethernet driver to TCP/IP stack
     ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handles[0])));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, got_ip_event_handler, eth_netif));
+    if (net_cfg.use_static)
+        ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_CONNECTED, eth_connected_event_handler, eth_netif));
+    else
+        ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, got_ip_event_handler, eth_netif));
     // Start Ethernet driver state machine
     for (int i = 0; i < eth_port_cnt; i++)
     {

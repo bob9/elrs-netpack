@@ -15,6 +15,13 @@ of the timer backpack, but instead of interfacing with the host
 device over a serial connection, a tcp socket connection is used
 instead.
 
+> [!TIP]
+> If you have a **PoE (Power-over-Ethernet) switch**, buy the **PoE version** of
+> the [Waveshare ESP32-S3-ETH](https://www.waveshare.com/esp32-s3-eth.htm) board.
+> A single Ethernet cable then both powers the netpack and connects it to the
+> network — no separate USB power supply needed at the field. Without PoE, power
+> it over its USB-C port.
+
 Since this board uses W5500 ethernet chip, the newest versions of ESP-IDF 
 are used directly. The W5500 is not currently supported by the Arduino ESP32 
 versions included in PlatformIO.
@@ -28,6 +35,72 @@ versions included in PlatformIO.
 ## Firmware Installation
 
 To install the ELRS Netpack firmware, use the [Netpack Installer](https://github.com/i-am-grub/netpack-installer) plugin for RotorHazard.
+
+> [!NOTE]
+> This firmware is the **network** option — a backpack the timing computer
+> reaches over Ethernet. If your ELRS Timer Backpack connects to the timing
+> computer over **USB** instead, you don't need this project; see
+> [VRxC_ELRS](https://github.com/bob9/VRxC_ELRS) for the USB backpack and
+> HDZero goggle setup.
+
+### Flashing a prebuilt image
+
+Every CI build produces a single merged image (`elrs-netpack-merged.bin`) that
+contains the bootloader, partition table and application, so it can be flashed
+in one step at offset `0x0`. Download it from the GitHub Actions build
+artifacts.
+
+The Waveshare ESP32-S3 uses the chip's **native USB**, so on both Windows 10/11
+and macOS it appears as a serial port with **no driver to install** — just
+connect the board's **USB-C** port to your computer.
+
+#### Option A — Web flasher (easiest; Windows &amp; macOS, nothing to install)
+
+1. Open [espressif.github.io/esptool-js](https://espressif.github.io/esptool-js/)
+   in **Chrome or Edge** (Web Serial is not available in Safari or Firefox).
+2. Connect the board's USB-C port to your computer.
+3. Click **Connect** and select the board's port (see the port names under
+   Option B if you're not sure which one it is).
+4. Set **Flash Address** to `0x0`, choose the merged `elrs-netpack-merged.bin`,
+   and click **Program**. When it finishes, the board reboots into the firmware.
+
+#### Option B — esptool (command line)
+
+Install esptool once — it needs Python 3:
+
+- **Windows:** `pip install esptool`
+- **macOS:** `pip3 install esptool` (or `brew install esptool`)
+
+**Windows**
+
+1. Find the port: open **Device Manager → Ports (COM &amp; LPT)** and note the
+   board's `COMx` (it shows as *USB Serial Device*), e.g. `COM4`.
+2. Flash:
+
+   ```
+   esptool --chip esp32s3 --port COM4 --baud 921600 write_flash 0x0 elrs-netpack-merged.bin
+   ```
+
+**macOS**
+
+1. Find the port — list it with:
+
+   ```
+   ls /dev/cu.usbmodem*
+   ```
+
+   (e.g. `/dev/cu.usbmodem101`).
+2. Flash:
+
+   ```
+   esptool.py --chip esp32s3 --port /dev/cu.usbmodem101 --baud 921600 write_flash 0x0 elrs-netpack-merged.bin
+   ```
+
+> [!TIP]
+> If the flasher can't connect, hold the board's **BOOT** button while plugging
+> it in (or while clicking Connect), then release — this forces the ESP32 into
+> download mode. After flashing, the board reboots into the firmware
+> automatically.
 
 ## Network Configuration
 
@@ -43,52 +116,48 @@ There are two ways the board can get its IP address:
 - **Static IP** — pin the board to a fixed address. This is more reliable for a
   race timer that always connects to the same IP.
 
-### Setting a custom static IP
+### Setting a static IP — no rebuild needed
 
-The static IP is defined under **`TCP Socket Server options`** in the project
-config. Set it either with `menuconfig` or by editing `sdkconfig` directly, then
-rebuild and flash.
+Network settings are stored on the device and can be changed at any time over
+the **USB-C port** (the same one used for flashing) with any serial terminal —
+no toolchain or rebuild required.
 
-**Option A — `idf.py menuconfig` (recommended):**
+1. Connect the board's USB-C port to your computer.
+2. Open a serial terminal on the board's port (any baud rate works over USB),
+   e.g. `idf.py monitor`, `screen /dev/ttyACM0`, PuTTY, or the serial console
+   in a Chrome-based web tool such as
+   [serial.huhn.me](https://serial.huhn.me/).
+3. At the `netpack>` prompt, type:
 
-```
-idf.py menuconfig
-```
+   ```
+   netconfig static 192.168.1.50
+   reboot
+   ```
 
-Open **`TCP Socket Server options`** and set:
+Available commands:
 
-| Option | Example |
+| Command | Effect |
 | --- | --- |
-| `Use static IP address instead of DHCP` | enabled |
-| `Static IP address` | `192.168.1.50` |
-| `Static netmask` | `255.255.255.0` |
-| `Static gateway` | `192.168.1.1` |
-| `TCP server listening port` | `8080` |
+| `netconfig` | Show the saved settings and the current IP |
+| `netconfig static <ip> [netmask] [gateway]` | Use a static IP address (netmask defaults to `255.255.255.0`, gateway to `.1` of the subnet) |
+| `netconfig dhcp` | Go back to DHCP (the default) |
+| `reboot` | Restart the board to apply saved settings |
+| `help` | List all commands |
 
-Save, then build and flash:
-
-```
-idf.py build flash
-```
-
-**Option B — edit `sdkconfig` directly**, then `idf.py build flash`:
-
-```
-CONFIG_USE_STATIC_IP=y
-CONFIG_STATIC_IP_ADDR="192.168.1.50"
-CONFIG_STATIC_NETMASK="255.255.255.0"
-CONFIG_STATIC_GATEWAY="192.168.1.1"
-CONFIG_TCP_SERVER_PORT=8080
-```
-
-To switch back to DHCP, set `Use static IP address instead of DHCP` to disabled
-(`CONFIG_USE_STATIC_IP` unset / `n`) and reflash.
+Settings persist across reboots and reflashes (they live in the NVS data
+partition, which flashing the app does not erase). `esptool.py erase_flash`
+resets them to defaults.
 
 > [!NOTE]
 > Choose a static IP that is on the **same subnet** as the computer running the
 > timer, is **outside your router's DHCP pool**, and does not collide with
-> another device. The board defaults to `192.168.1.195`. On boot it logs the
-> address it is using (`Static IP: …`) on the serial console.
+> another device. On boot the board logs the address it is using on the serial
+> console.
+
+For developers building from source, the defaults used when nothing has been
+configured over the console can be baked in under **`TCP Socket Server
+options`** in `idf.py menuconfig` (`USE_STATIC_IP`, `STATIC_IP_ADDR`,
+`STATIC_NETMASK`, `STATIC_GATEWAY`, `TCP_SERVER_PORT`).
 
 ## 3D-Printable Case by [Hazard Creative](https://github.com/HazardCreative)
 
