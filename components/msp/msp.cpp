@@ -95,7 +95,14 @@ bool MSP::processReceivedByte(uint8_t c)
             m_packet.flags = header->flags;
             // reset the offset iterator for re-use in payload below
             m_offset = 0;
-            if (m_packet.payloadSize == 0)
+            if (m_packet.payloadSize > MSP_PORT_INBUF_SIZE)
+            {
+                // Declared payload would overflow m_packet.payload — drop the
+                // frame instead of writing past the buffer (reachable from any
+                // TCP client or ESP-NOW sender).
+                m_inputState = MSP_IDLE;
+            }
+            else if (m_packet.payloadSize == 0)
                 m_inputState = MSP_CHECKSUM_V2_NATIVE;
             else
                 m_inputState = MSP_PAYLOAD_V2_NATIVE;

@@ -185,6 +185,20 @@ static void espnowRecvCB(const esp_now_recv_info_t *recv_info, const uint8_t *da
                     ESP_LOGI(TAG, "Recording state change added to buffer");
                 else
                     ESP_LOGE(TAG, "Failed to add recieved ESPNOW data to ring buffer");
+                break;
+            }
+            case MSP_SET_VTX_CONFIG:
+            {
+                // A TX backpack broadcasts its module's VTX config whenever the
+                // radio accepts a channel change (and in reply to
+                // MSP_ELRS_REQU_VTX_PKT). Forward it to the TCP client so a
+                // race timer gets closed-loop confirmation that the RADIO (not
+                // just the goggles) took the change.
+                if (xRingbufferSend(xRingReceivedEspnow, msp.getReceivedPacket(), sizeof(mspPacket_t), pdMS_TO_TICKS(1000)) == pdTRUE)
+                    ESP_LOGI(TAG, "VTX config echo added to buffer");
+                else
+                    ESP_LOGE(TAG, "Failed to add recieved ESPNOW data to ring buffer");
+                break;
             }
             }
 
@@ -338,6 +352,11 @@ void runESPNOWServer(void *pvParameters)
 
                         ESP_LOGI(TAG, "Setting to recieved address");
                         memcpy(sendAddress, receivedAddress, 6);
+                        // A MAC can only be unicast: an odd first byte makes
+                        // esp_wifi_set_mac fail, and ESP_ERROR_CHECK would
+                        // reboot the netpack mid-race. Mask it like the bind
+                        // and startup paths do.
+                        sendAddress[0] = sendAddress[0] & ~0x01;
                     }
                     else
                     {
@@ -345,7 +364,9 @@ void runESPNOWServer(void *pvParameters)
                         memcpy(sendAddress, bindAddress, 6);
                     }
 
-                    ESP_ERROR_CHECK(esp_wifi_set_mac(WIFI_IF_STA, sendAddress));
+                    esp_err_t macErr = esp_wifi_set_mac(WIFI_IF_STA, sendAddress);
+                    if (macErr != ESP_OK)
+                        ESP_LOGE(TAG, "Failed to set STA MAC for send UID: %s", esp_err_to_name(macErr));
 
                     if (sendAddress[0] != 0 || sendAddress[1] != 0 || sendAddress[2] != 0 ||
                         sendAddress[3] != 0 || sendAddress[4] != 0 || sendAddress[5] != 0)
