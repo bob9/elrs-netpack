@@ -14,15 +14,26 @@
 #define STORAGE_NETMASK_KEY "net_mask"
 #define STORAGE_GATEWAY_KEY "net_gw"
 
+// The netpack ALWAYS uses a static IP — DHCP is intentionally disabled so a
+// race timer / venue agent can always reach it at a fixed, known address. The
+// address itself is still overridable at runtime via `netconfig static <ip>`.
+// Defaults are hardcoded (with a Kconfig fallback) so this holds regardless of
+// the build's CONFIG_USE_STATIC_IP state.
+#ifndef CONFIG_STATIC_IP_ADDR
+#define CONFIG_STATIC_IP_ADDR "192.168.1.195"
+#endif
+#ifndef CONFIG_STATIC_NETMASK
+#define CONFIG_STATIC_NETMASK "255.255.255.0"
+#endif
+#ifndef CONFIG_STATIC_GATEWAY
+#define CONFIG_STATIC_GATEWAY "192.168.1.1"
+#endif
+
 static const char *TAG = "net_config";
 
 static void net_config_defaults(net_config_t *cfg)
 {
-#ifdef CONFIG_USE_STATIC_IP
-    cfg->use_static = true;
-#else
-    cfg->use_static = false;
-#endif
+    cfg->use_static = true; // DHCP disabled — always static
     strlcpy(cfg->ip, CONFIG_STATIC_IP_ADDR, sizeof(cfg->ip));
     strlcpy(cfg->netmask, CONFIG_STATIC_NETMASK, sizeof(cfg->netmask));
     strlcpy(cfg->gateway, CONFIG_STATIC_GATEWAY, sizeof(cfg->gateway));
@@ -36,9 +47,10 @@ void net_config_load(net_config_t *cfg)
     if (nvs_open(STORAGE_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
         return;
 
-    uint8_t use_static;
-    if (nvs_get_u8(handle, STORAGE_STATIC_KEY, &use_static) == ESP_OK)
-        cfg->use_static = use_static != 0;
+    // DHCP is disabled: the saved use_static flag is intentionally NOT read, so
+    // a stale "dhcp" setting can never force DHCP. Only the address is
+    // overridable via `netconfig static <ip>`.
+    cfg->use_static = true;
 
     size_t len = sizeof(cfg->ip);
     nvs_get_str(handle, STORAGE_IP_KEY, cfg->ip, &len);
@@ -107,10 +119,8 @@ static int cmd_netconfig(int argc, char **argv)
 
     if (strcmp(argv[1], "dhcp") == 0)
     {
-        cfg.use_static = false;
-        if (net_config_save(&cfg) != ESP_OK)
-            return 1;
-        printf("Saved: DHCP mode. Type 'reboot' to apply.\n");
+        printf("DHCP is disabled on the netpack — it always uses a static IP.\n"
+               "Use 'netconfig static <ip>' to change the address.\n");
         return 0;
     }
 
@@ -166,8 +176,8 @@ static int cmd_netconfig(int argc, char **argv)
 
     printf("Usage:\n"
            "  netconfig                                 Show current settings\n"
-           "  netconfig dhcp                            Use DHCP (default)\n"
-           "  netconfig static <ip> [netmask] [gateway] Use a static IP address\n");
+           "  netconfig static <ip> [netmask] [gateway] Set the static IP address\n"
+           "  (DHCP is disabled — the netpack always uses a static IP)\n");
     return 1;
 }
 
