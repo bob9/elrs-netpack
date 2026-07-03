@@ -187,19 +187,6 @@ static void espnowRecvCB(const esp_now_recv_info_t *recv_info, const uint8_t *da
                     ESP_LOGE(TAG, "Failed to add recieved ESPNOW data to ring buffer");
                 break;
             }
-            case MSP_SET_VTX_CONFIG:
-            {
-                // A TX backpack broadcasts its module's VTX config whenever the
-                // radio accepts a channel change (and in reply to
-                // MSP_ELRS_REQU_VTX_PKT). Forward it to the TCP client so a
-                // race timer gets closed-loop confirmation that the RADIO (not
-                // just the goggles) took the change.
-                if (xRingbufferSend(xRingReceivedEspnow, msp.getReceivedPacket(), sizeof(mspPacket_t), pdMS_TO_TICKS(1000)) == pdTRUE)
-                    ESP_LOGI(TAG, "VTX config echo added to buffer");
-                else
-                    ESP_LOGE(TAG, "Failed to add recieved ESPNOW data to ring buffer");
-                break;
-            }
             }
 
             msp.markPacketReceived();
