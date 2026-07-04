@@ -147,15 +147,17 @@ esptool.py --chip esp32s3 --port <PORT> --baud 921600 write_flash \
   0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin
 ```
 
-### Cutting a release (maintainers)
+### Releases (maintainers)
 
-Push a version tag and CI does the rest — builds the firmware, names the
-release after the supported hardware, and attaches the merged image + the
-individual binaries:
+**Every commit pushed to `main` is released automatically** — CI builds the
+firmware and publishes a release versioned `v1.0.<build-number>`, named after
+the supported hardware, with the merged image + individual binaries attached.
+
+To cut a milestone release under a specific version instead, push a tag:
 
 ```
-git tag v1.0.0
-git push bob9 v1.0.0
+git tag v2.0.0
+git push bob9 v2.0.0
 ```
 
 ## Network Configuration
