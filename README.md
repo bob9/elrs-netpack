@@ -45,16 +45,25 @@ To install the ELRS Netpack firmware, use the [Netpack Installer](https://github
 
 ### Flashing a prebuilt image
 
-Every CI build produces a single merged image (`elrs-netpack-merged.bin`) that
-contains the bootloader, partition table and application, so it can be flashed
-in one step at offset `0x0`. Download it from the GitHub Actions build
-artifacts.
+Grab the firmware from the [**Releases**](../../releases) page — each release is
+named after the board it supports (e.g. *ELRS Netpack v1.0.0 — Waveshare
+ESP32-S3-ETH*) and ships two assets:
 
-The Waveshare ESP32-S3 uses the chip's **native USB**, so on both Windows 10/11
-and macOS it appears as a serial port with **no driver to install** — just
-connect the board's **USB-C** port to your computer.
+- `elrs-netpack-<version>-waveshare-esp32-s3-eth-merged.bin` — the bootloader,
+  partition table and application **merged into one file**, flashed in one step
+  at offset `0x0`. **This is the one you want.**
+- `elrs-netpack-<version>-waveshare-esp32-s3-eth-binaries.zip` — the individual
+  binaries (bootloader / partition table / app) with their flash offsets, for
+  advanced use.
 
-#### Option A — Web flasher (easiest; Windows &amp; macOS, nothing to install)
+(Development builds of the same merged image are also produced by every CI run
+on `main` — see the GitHub Actions build artifacts.)
+
+The Waveshare ESP32-S3 uses the chip's **native USB**, so on Windows 10/11,
+macOS and Linux it appears as a serial port with **no driver to install** —
+just connect the board's **USB-C** port to your computer.
+
+#### Option A — Web flasher (easiest; Windows, macOS &amp; Linux, nothing to install)
 
 1. Open [espressif.github.io/esptool-js](https://espressif.github.io/esptool-js/)
    in **Chrome or Edge** (Web Serial is not available in Safari or Firefox).
@@ -70,6 +79,8 @@ Install esptool once — it needs Python 3:
 
 - **Windows:** `pip install esptool`
 - **macOS:** `pip3 install esptool` (or `brew install esptool`)
+- **Linux:** `pipx install esptool` (or `pip3 install --user esptool`; on
+  Debian/Ubuntu, `sudo apt install esptool` also works)
 
 **Windows**
 
@@ -96,11 +107,56 @@ Install esptool once — it needs Python 3:
    esptool.py --chip esp32s3 --port /dev/cu.usbmodem101 --baud 921600 write_flash 0x0 elrs-netpack-merged.bin
    ```
 
+**Linux**
+
+1. Give yourself permission to use serial ports (once, then log out and back
+   in):
+
+   ```
+   sudo usermod -aG dialout $USER
+   ```
+
+   (On Arch-based distros the group is `uucp` instead of `dialout`.)
+2. Find the port — the board shows up as a USB CDC device:
+
+   ```
+   ls /dev/ttyACM*
+   ```
+
+   (e.g. `/dev/ttyACM0`).
+3. Flash:
+
+   ```
+   esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 write_flash 0x0 elrs-netpack-merged.bin
+   ```
+
 > [!TIP]
 > If the flasher can't connect, hold the board's **BOOT** button while plugging
 > it in (or while clicking Connect), then release — this forces the ESP32 into
 > download mode. After flashing, the board reboots into the firmware
 > automatically.
+
+#### Flashing the individual binaries (advanced)
+
+The `…-binaries.zip` release asset contains the three parts the merged image is
+built from. Flash them at these offsets (same command on every OS, adjust the
+port):
+
+```
+esptool.py --chip esp32s3 --port <PORT> --baud 921600 write_flash \
+  0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin
+```
+
+### Cutting a release (maintainers)
+
+Push a version tag and CI does the rest — builds the firmware, names the
+release after the supported hardware, and attaches the merged image + the
+individual binaries:
+
+```
+git tag v1.0.0
+git push bob9 v1.0.0
+```
 
 ## Network Configuration
 

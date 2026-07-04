@@ -10,7 +10,17 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
+
+permissions:
+  contents: write
+
+env:
+  # The board this firmware targets — used to label releases and asset names.
+  HARDWARE: Waveshare ESP32-S3-ETH
+  HARDWARE_SLUG: waveshare-esp32-s3-eth
 
 jobs:
   build:
@@ -44,3 +54,61 @@ jobs:
           build/bootloader/bootloader.bin
           build/partition_table/partition-table.bin
           build/elrs-netpack.bin
+
+    - name: Package release assets
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        VERSION="${GITHUB_REF_NAME}"
+        mkdir -p release
+        cp build/elrs-netpack-merged.bin "release/elrs-netpack-${VERSION}-${HARDWARE_SLUG}-merged.bin"
+        mkdir -p parts
+        cp build/bootloader/bootloader.bin parts/
+        cp build/partition_table/partition-table.bin parts/
+        cp build/elrs-netpack.bin parts/
+        printf '%s\n' \
+          "Individual binaries for esptool (chip: esp32s3, flash: dio 80m 2MB):" \
+          "" \
+          "  esptool --chip esp32s3 --port <PORT> --baud 921600 write_flash \\" \
+          "    0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin" \
+          "" \
+          "Most users should flash the single merged image at 0x0 instead." \
+          > parts/README.txt
+        (cd parts && zip -j "../release/elrs-netpack-${VERSION}-${HARDWARE_SLUG}-binaries.zip" *)
+
+    - name: Create GitHub release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        name: "ELRS Netpack ${{ github.ref_name }} — ${{ env.HARDWARE }}"
+        files: release/*
+        generate_release_notes: true
+        body: |
+          Firmware for the **${{ env.HARDWARE }}** development board (standard and PoE variants — same firmware).
+
+          ## Which file do I need?
+
+          - `…-merged.bin` — the whole firmware in one file. Flash it at offset `0x0`. **Use this one.**
+          - `…-binaries.zip` — the individual bootloader / partition-table / app binaries, for advanced use.
+
+          ## Flashing
+
+          Connect the board's **USB-C** port. It uses the ESP32-S3's native USB — **no driver needed** on Windows, macOS, or Linux.
+
+          **Easiest (any OS):** open [espressif.github.io/esptool-js](https://espressif.github.io/esptool-js/) in Chrome or Edge → **Connect** → Flash Address `0x0` → choose the merged `.bin` → **Program**.
+
+          **Command line** (install once with `pip install esptool`):
+
+          ```bash
+          # Windows (find COMx in Device Manager → Ports)
+          esptool --chip esp32s3 --port COM4 --baud 921600 write_flash 0x0 elrs-netpack-${{ github.ref_name }}-${{ env.HARDWARE_SLUG }}-merged.bin
+
+          # macOS (port: ls /dev/cu.usbmodem*)
+          esptool --chip esp32s3 --port /dev/cu.usbmodem101 --baud 921600 write_flash 0x0 elrs-netpack-${{ github.ref_name }}-${{ env.HARDWARE_SLUG }}-merged.bin
+
+          # Linux (port: ls /dev/ttyACM*; add yourself to the dialout group first)
+          esptool --chip esp32s3 --port /dev/ttyACM0 --baud 921600 write_flash 0x0 elrs-netpack-${{ github.ref_name }}-${{ env.HARDWARE_SLUG }}-merged.bin
+          ```
+
+          If the flasher can't connect, hold the board's **BOOT** button while plugging in (or while clicking Connect), then release.
+
+          Full step-by-step instructions for all platforms are in the [README](https://github.com/${{ github.repository }}#firmware-installation).
