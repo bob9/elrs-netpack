@@ -10,6 +10,7 @@
 #include "mbedtls/md5.h"
 #include "msp.h"
 #include "msptypes.h"
+#include "rtc_sync.h"
 #include "test_server.h"
 
 static const char *TAG = "test_server";
@@ -233,6 +234,11 @@ static const char PAGE[] = R"HTML(<!DOCTYPE html>
  <button onclick="send('channel')">Change channel</button>
  <small>Low Band needs goggle firmware with remote band switching.</small>
 </div>
+<div class="card"><h2>Netpack clock</h2>
+ <div style="margin-bottom:8px;font-size:14px">Netpack time: <b id="npclock">loading...</b></div>
+ <button onclick="setClock()">Set from this device's clock</button>
+ <small>Normally set automatically by dd-pits or NTP; use this when neither is available.</small>
+</div>
 <div class="card"><h2>Extras</h2>
  <button onclick="send('time')">Send time sync</button>
  <label style="margin-top:10px">DVR label</label><input id="dvr" value="NetpackTest" maxlength="32">
@@ -243,6 +249,25 @@ static const char PAGE[] = R"HTML(<!DOCTYPE html>
 <script>
 const $=id=>document.getElementById(id);
 $('phrase').value=localStorage.getItem('bindphrase')||'';
+async function refreshClock(){
+ try{const r=await fetch('/api/clock');const j=await r.json();
+  document.getElementById('npclock').textContent=j.set?j.time:'not set';
+ }catch(e){document.getElementById('npclock').textContent='?'}
+}
+refreshClock();setInterval(refreshClock,10000);
+async function setClock(){
+ const n=new Date();
+ const st=$('status');st.style.display='block';st.className='';st.textContent='Setting clock...';
+ const body=new URLSearchParams({action:'setclock',y:n.getFullYear(),mo:n.getMonth()+1,d:n.getDate(),
+   h:n.getHours(),mi:n.getMinutes(),s:n.getSeconds()});
+ try{
+  const r=await fetch('/api/test',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+  const j=await r.json();
+  st.className=j.ok?'ok':'err';
+  st.textContent=j.ok?'Netpack clock set - broadcasting to goggles':'Error: '+j.error;
+  refreshClock();
+ }catch(e){st.className='err';st.textContent='Request failed: '+e}
+}
 async function send(action){
  const phrase=$('phrase').value.trim();
  const st=$('status'); st.style.display='block';
@@ -261,6 +286,27 @@ async function send(action){
 </script></body></html>
 )HTML";
 
+// Current netpack clock as JSON, for the test page's clock card
+static esp_err_t clock_get(httpd_req_t *req)
+{
+    char resp[96];
+    time_t now = time(NULL);
+    if (now < 1704067200)
+    {
+        snprintf(resp, sizeof(resp), "{\"set\":false}");
+    }
+    else
+    {
+        struct tm timeData;
+        char buf[32];
+        localtime_r(&now, &timeData);
+        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &timeData);
+        snprintf(resp, sizeof(resp), "{\"set\":true,\"time\":\"%s\"}", buf);
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, resp);
+}
+
 static esp_err_t root_get(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
@@ -277,6 +323,36 @@ static esp_err_t api_post(httpd_req_t *req)
 
     char action[16], phrase[96], text[64], param[40];
     form_value(body, "action", action, sizeof(action));
+
+    // Setting the netpack clock needs no bind phrase - the browser sends its
+    // own local wall time
+    if (strcmp(action, "setclock") == 0)
+    {
+        uint8_t clk[6];
+        const char *keys[6] = {"y", "mo", "d", "h", "mi", "s"};
+        int vals[6];
+        bool ok = true;
+        for (int i = 0; i < 6; i++)
+        {
+            ok = ok && form_value(body, keys[i], param, sizeof(param));
+            vals[i] = atoi(param);
+        }
+        if (!ok || vals[0] < 2024)
+        {
+            httpd_resp_set_type(req, "application/json");
+            return httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"bad clock values\"}");
+        }
+        clk[0] = (uint8_t)(vals[0] - 1900);
+        clk[1] = (uint8_t)(vals[1] - 1);
+        clk[2] = (uint8_t)vals[2];
+        clk[3] = (uint8_t)vals[3];
+        clk[4] = (uint8_t)vals[4];
+        clk[5] = (uint8_t)vals[5];
+        rtc_sync_set_clock(clk, sizeof(clk));
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":true,\"uid\":\"netpack clock\"}");
+    }
+
     if (!form_value(body, "phrase", phrase, sizeof(phrase)))
     {
         httpd_resp_set_type(req, "application/json");
@@ -346,8 +422,10 @@ void test_server_start(RingbufHandle_t espnow_out)
 
     static const httpd_uri_t root = {.uri = "/", .method = HTTP_GET, .handler = root_get, .user_ctx = NULL};
     static const httpd_uri_t api = {.uri = "/api/test", .method = HTTP_POST, .handler = api_post, .user_ctx = NULL};
+    static const httpd_uri_t clk = {.uri = "/api/clock", .method = HTTP_GET, .handler = clock_get, .user_ctx = NULL};
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &api);
+    httpd_register_uri_handler(server, &clk);
 
     ESP_LOGI(TAG, "Goggle test page on http://<netpack-ip>/ (port 80)");
 }

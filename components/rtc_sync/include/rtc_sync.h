@@ -15,6 +15,12 @@ void rtc_sync_start(RingbufHandle_t espnow_out);
 // been synchronized.
 void rtc_sync_send_now(void);
 
+// Set the netpack clock directly (e.g. from the HTTP test page's "set from
+// this device" button). Payload is the 6-byte SET_RTC field layout (years
+// since 1900, month 0-11, day, hour, min, sec, local wall time). Triggers a
+// prompt broadcast to the goggles.
+void rtc_sync_set_clock(const uint8_t *payload, uint16_t size);
+
 // Seed the local clock from an MSP_ELRS_BACKPACK_SET_RTC payload received
 // from the TCP client (e.g. dd-pits). The external sender is treated as
 // authoritative: periodic SNTP-based broadcasts pause while it keeps

@@ -161,21 +161,14 @@ void rtc_sync_send_now(void)
         xTaskNotifyGive(rtcTaskHandle);
 }
 
-void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
+// The senders transmit local wall time; interpret it under our configured
+// TZ so localtime_r round-trips the same fields (with the default UTC0 TZ
+// the fields pass through 1:1)
+static bool seed_clock(const uint8_t *payload, uint16_t size)
 {
-    // One of our own queued time packets looping back - not an external source
-    if (self_pending.load() > 0)
-    {
-        self_pending.fetch_sub(1);
-        return;
-    }
-
     if (size < 6)
-        return;
+        return false;
 
-    // The sender transmits local wall time; interpret it under our
-    // configured TZ so localtime_r round-trips the same fields (with the
-    // default UTC0 TZ the fields pass through 1:1)
     struct tm timeData = {};
     timeData.tm_year = payload[0];
     timeData.tm_mon = payload[1];
@@ -187,8 +180,30 @@ void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
 
     timeval tv = {mktime(&timeData), 0};
     settimeofday(&tv, NULL);
+    return true;
+}
 
-    last_external_us.store(esp_timer_get_time());
+void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
+{
+    // One of our own queued time packets looping back - not an external source
+    if (self_pending.load() > 0)
+    {
+        self_pending.fetch_sub(1);
+        return;
+    }
+
+    if (seed_clock(payload, size))
+        last_external_us.store(esp_timer_get_time());
+}
+
+void rtc_sync_set_clock(const uint8_t *payload, uint16_t size)
+{
+    if (!seed_clock(payload, size))
+        return;
+    ESP_LOGI(TAG, "Clock set manually via the test page");
+    // Broadcast the fresh time promptly (unless dd-pits is active and
+    // already doing so)
+    rtc_sync_send_now();
 }
 
 static int cmd_timeconfig(int argc, char **argv)
