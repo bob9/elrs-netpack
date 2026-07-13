@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <sys/time.h>
+#include <atomic>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/ringbuf.h"
@@ -43,11 +44,15 @@ static char ntp_server[64] = DEFAULT_NTP_SERVER;
 static char tz_string[64] = DEFAULT_TZ;
 
 // esp_timer time of the last externally-received SET_RTC, 0 = never
-static volatile int64_t last_external_us = 0;
+static std::atomic<int64_t> last_external_us{0};
+
+// Our own queued time packets come back through the ESPNOW task's SET_RTC
+// case; count them so they aren't mistaken for an external time source
+static std::atomic<uint32_t> self_pending{0};
 
 static bool external_source_active(void)
 {
-    int64_t seen = last_external_us;
+    int64_t seen = last_external_us.load();
     return seen != 0 && esp_timer_get_time() - seen < RTC_EXTERNAL_HOLDOFF_US;
 }
 
@@ -120,6 +125,7 @@ static bool send_rtc_packet(void)
         ESP_LOGE(TAG, "Failed to add RTC packet to ring buffer");
         return false;
     }
+    self_pending.fetch_add(1);
 
     ESP_LOGI(TAG, "Queued RTC time %04d-%02d-%02d %02d:%02d:%02d for ESPNOW send",
              timeData.tm_year + 1900, timeData.tm_mon + 1, timeData.tm_mday,
@@ -157,6 +163,13 @@ void rtc_sync_send_now(void)
 
 void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
 {
+    // One of our own queued time packets looping back - not an external source
+    if (self_pending.load() > 0)
+    {
+        self_pending.fetch_sub(1);
+        return;
+    }
+
     if (size < 6)
         return;
 
@@ -175,7 +188,7 @@ void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
     timeval tv = {mktime(&timeData), 0};
     settimeofday(&tv, NULL);
 
-    last_external_us = esp_timer_get_time();
+    last_external_us.store(esp_timer_get_time());
 }
 
 static int cmd_timeconfig(int argc, char **argv)

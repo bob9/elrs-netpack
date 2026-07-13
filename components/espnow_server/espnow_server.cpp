@@ -375,11 +375,19 @@ void runESPNOWServer(void *pvParameters)
                 case MSP_ELRS_BACKPACK_SET_RTC:
                 {
                     // The TCP client (e.g. dd-pits) is sending the time: seed
-                    // our own clock from it and pause the SNTP broadcasts,
-                    // then fall through to forward the packet to the goggles
+                    // our own clock from it and pause the SNTP broadcasts
+                    // (no-op for our own queued time packets)
                     rtc_sync_external_time(packet->payload, packet->payloadSize);
+
+                    // Fire-and-forget: a time message to powered-off goggles
+                    // can never be acked and is re-sent every minute anyway,
+                    // so don't spend the retry budget that OSD traffic could
+                    // be queued behind. The send callback is still consumed
+                    // so it can't leak into the next packet's ack wait.
+                    if (sendMSPViaEspnow(packet) == ESP_OK)
+                        xTaskNotifyWait(0x00, ULONG_MAX, &sendSuccess, portMAX_DELAY);
+                    break;
                 }
-                // fall through
                 default:
                 {
                     sendAttempt = 0;
