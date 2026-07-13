@@ -9,6 +9,7 @@
 #include "tcp_server.h"
 #include "net_config.h"
 #include "rtc_sync.h"
+#include "test_server.h"
 #include "tasks.h"
 #include "msp.h"
 
@@ -56,6 +57,10 @@ extern "C" void app_main(void)
     // Sync the clock over NTP and forward the time to the backpack(s) via
     // the same buffer the TCP server uses for outgoing ESPNOW packets
     rtc_sync_start(xRingReceivedSocket);
+
+    // HTTP test page (port 80): fire OSD/channel/time test messages at a
+    // goggle by bind phrase, to verify the link at the field
+    test_server_start(xRingReceivedSocket);
 
     // Serial console on the USB port for setting network details (see 'netconfig')
     net_config_start_console();

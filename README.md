@@ -253,6 +253,22 @@ configured over the console can be baked in under **`TCP Socket Server
 options`** in `idf.py menuconfig` (`USE_STATIC_IP`, `STATIC_IP_ADDR`,
 `STATIC_NETMASK`, `STATIC_GATEWAY`, `TCP_SERVER_PORT`).
 
+## Goggle Test Page
+
+The netpack serves a **test page on port 80** — browse to `http://<netpack-ip>/`
+(or `http://elrs-netpack.local/`). Type a pilot's **ELRS bind phrase** (the UID
+is derived exactly as the ELRS Configurator does it) and fire test messages at
+their goggles to verify the whole link before racing:
+
+- **OSD message** — shows centred text on their OSD (plus a Clear button)
+- **Channel change** — Raceband, F/E, and Low Band channels (Low Band needs
+  goggle firmware with remote band switching)
+- **Time sync** — sets their goggle clock from the netpack clock
+- **DVR name** — labels their next DVR recording
+
+Messages go through the normal ESPNOW send path, so a working test means OSD,
+channel changes and the rest will work for that pilot on race day.
+
 ## Goggle Clock Synchronization
 
 The netpack keeps the clock of bound VRX backpacks (e.g. HDZero goggles) in
