@@ -2,4 +2,4 @@
 sdkconfig.old
 **/.vscode
 **/managed_components
-*.lock
+*.lock.cache/
