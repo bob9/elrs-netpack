@@ -199,6 +199,9 @@ Available commands:
 | `netconfig` | Show the saved settings and the current IP |
 | `netconfig static <ip> [netmask] [gateway]` | Use a static IP address (netmask defaults to `255.255.255.0`, gateway to `.1` of the subnet) |
 | `netconfig dhcp` | Go back to DHCP (the default) |
+| `timeconfig` | Show the time settings and current local time |
+| `timeconfig tz <posix-tz>` | Set the timezone, e.g. `timeconfig tz AEST-10` |
+| `timeconfig server <host\|ip>` | Set the NTP server (default `pool.ntp.org`; reboot to apply) |
 | `reboot` | Restart the board to apply saved settings |
 | `help` | List all commands |
 
@@ -216,6 +219,39 @@ For developers building from source, the defaults used when nothing has been
 configured over the console can be baked in under **`TCP Socket Server
 options`** in `idf.py menuconfig` (`USE_STATIC_IP`, `STATIC_IP_ADDR`,
 `STATIC_NETMASK`, `STATIC_GATEWAY`, `TCP_SERVER_PORT`).
+
+## Goggle Clock Synchronization
+
+The netpack keeps the clock of bound VRX backpacks (e.g. HDZero goggles) in
+sync so DVR recordings carry correct timestamps. It syncs its own clock over
+NTP, then sends the time over ESP-NOW (`MSP_ELRS_BACKPACK_SET_RTC`) when a
+goggle backpack boots and every 60 seconds after that. On HDZero goggles the
+backpack sets both the Linux OS clock and the hardware RTC, so recording
+names and file timestamps come out right.
+
+Set your timezone once over the serial console (the goggles expect local wall
+time):
+
+```
+timeconfig tz AEST-10
+```
+
+Timezones use the POSIX `TZ` format — e.g. `AEST-10` (Brisbane, no DST),
+`AEST-10AEDT,M10.1.0,M4.1.0/3` (Sydney/Melbourne), `NZST-12NZDT,M9.5.0,M4.1.0/3`
+(New Zealand). Note the sign is inverted relative to UTC offsets: UTC+10 is
+written `-10`.
+
+If the venue network has no internet access, point the netpack at a local NTP
+server (e.g. the machine running the race timer) with
+`timeconfig server <ip>`. Alternatively, anything connected to the TCP socket
+can push an `MSP_ELRS_BACKPACK_SET_RTC` packet with 6 payload bytes (years
+since 1900, month 0-11, day, hour, minute, second in local time) and it is
+forwarded to the goggles as-is.
+
+> [!NOTE]
+> The goggles-side handling requires the ExpressLRS Backpack firmware on the
+> goggles to process `SET_RTC` received over ESP-NOW (recent firmware built
+> from the Backpack repo with this support).
 
 ## 3D-Printable Case by [Hazard Creative](https://github.com/HazardCreative)
 

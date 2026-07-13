@@ -216,6 +216,14 @@ void run_tcp_server(void *pvParameters)
         ip_info.gw.addr = esp_ip4addr_aton(net_cfg.gateway);
 
         ESP_ERROR_CHECK(esp_netif_set_ip_info(eth_netif, &ip_info));
+
+        // A static IP never receives DNS servers from DHCP; point DNS at the
+        // gateway so hostnames (e.g. the NTP server) can still resolve
+        esp_netif_dns_info_t dns_info;
+        memset(&dns_info, 0, sizeof(dns_info));
+        dns_info.ip.type = ESP_IPADDR_TYPE_V4;
+        dns_info.ip.u_addr.ip4.addr = ip_info.gw.addr;
+        ESP_ERROR_CHECK(esp_netif_set_dns_info(eth_netif, ESP_NETIF_DNS_MAIN, &dns_info));
     }
     else
         ESP_LOGI(TAG, "Using DHCP to obtain IP address");

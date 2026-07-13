@@ -14,6 +14,7 @@
 #include "tasks.h"
 #include "msptypes.h"
 #include "msp.h"
+#include "rtc_sync.h"
 
 #define NO_BINDING_TIMEOUT 120000 / portTICK_PERIOD_MS
 #define STORAGE_NAMESPACE "netpack"
@@ -185,6 +186,13 @@ static void espnowRecvCB(const esp_now_recv_info_t *recv_info, const uint8_t *da
                     ESP_LOGI(TAG, "Recording state change added to buffer");
                 else
                     ESP_LOGE(TAG, "Failed to add recieved ESPNOW data to ring buffer");
+                break;
+            }
+            case MSP_ELRS_REQU_VTX_PKT:
+            {
+                // A VRX backpack spams this on boot - send it the current time
+                ESP_LOGI(TAG, "VRX backpack requested startup packet, sending time");
+                rtc_sync_send_now();
                 break;
             }
             }

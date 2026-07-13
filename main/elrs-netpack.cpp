@@ -8,6 +8,7 @@
 #include "espnow_server.h"
 #include "tcp_server.h"
 #include "net_config.h"
+#include "rtc_sync.h"
 #include "tasks.h"
 #include "msp.h"
 
@@ -51,6 +52,10 @@ extern "C" void app_main(void)
         .write = xRingReceivedSocket,
         .read = xRingReceivedEspnow};
     xTaskCreatePinnedToCore(run_tcp_server, "SocketManagerTask", 4096, (void *)&tcp_server_params, 10, &tcpTaskHandle, 1);
+
+    // Sync the clock over NTP and forward the time to the backpack(s) via
+    // the same buffer the TCP server uses for outgoing ESPNOW packets
+    rtc_sync_start(xRingReceivedSocket);
 
     // Serial console on the USB port for setting network details (see 'netconfig')
     net_config_start_console();
