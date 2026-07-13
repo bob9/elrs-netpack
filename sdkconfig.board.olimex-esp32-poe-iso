@@ -1,0 +1,25 @@
+# Olimex ESP32-POE-ISO (and ESP32-POE) — https://www.olimex.com/Products/IoT/ESP32/ESP32-POE-ISO/
+# ESP32-WROOM-32 + LAN8710A RMII PHY on the internal EMAC
+CONFIG_IDF_TARGET="esp32"
+
+CONFIG_ETHERNET_INTERNAL_SUPPORT=y
+CONFIG_ETHERNET_PHY_LAN87XX=y
+CONFIG_ETHERNET_MDC_GPIO=23
+CONFIG_ETHERNET_MDIO_GPIO=18
+CONFIG_ETHERNET_PHY_RST_GPIO=-1
+CONFIG_ETHERNET_PHY_ADDR=0
+
+# The PHY's power rail is gated by GPIO12; the ethernet_init board-specific
+# init hook drives it high before the PHY is initialized
+CONFIG_ETHERNET_BOARD_SPECIFIC_INIT_DEFAULT=y
+CONFIG_ETHERNET_EXT_OSC_EN_GPIO_NUM=12
+
+# The ESP32 outputs the 50 MHz RMII clock to the PHY on GPIO17
+CONFIG_ETH_RMII_CLK_OUTPUT=y
+CONFIG_ETH_RMII_CLK_OUT_GPIO=17
+
+# WROOM-32E module has 4 MB flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Console stays on UART0 (the board's micro-USB via CH340); no USB-Serial-JTAG
+# on the classic ESP32.

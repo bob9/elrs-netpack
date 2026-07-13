@@ -7,24 +7,28 @@
 > organization. They do not have an obligation to provide help or support to you
 > if you plan to utilize this project.
 
-The ELRS Netpack is firmware for the 
-[Waveshare ESP32-S3 Ethernet](https://www.waveshare.com/esp32-s3-eth.htm)
-development board to support interfacing with ExpressLRS backpack
-compatible devices. This device is designed to act as the equivalent
-of the timer backpack, but instead of interfacing with the host
-device over a serial connection, a tcp socket connection is used
-instead.
+The ELRS Netpack is firmware for Ethernet-equipped ESP32 development
+boards to support interfacing with ExpressLRS backpack compatible
+devices. This device is designed to act as the equivalent of the timer
+backpack, but instead of interfacing with the host device over a serial
+connection, a tcp socket connection is used instead.
+
+Supported boards:
+
+| Board | Chip | Ethernet | PoE |
+| --- | --- | --- | --- |
+| [Waveshare ESP32-S3-ETH](https://www.waveshare.com/esp32-s3-eth.htm) | ESP32-S3 | W5500 (SPI) | PoE variant available |
+| [Olimex ESP32-POE-ISO](https://www.olimex.com/Products/IoT/ESP32/ESP32-POE-ISO/) (incl. `-EA`, and the non-ISO ESP32-POE) | ESP32-WROOM-32 | LAN8710A/LAN8720 (RMII) | Yes (isolated on ISO) |
 
 > [!TIP]
-> If you have a **PoE (Power-over-Ethernet) switch**, buy the **PoE version** of
-> the [Waveshare ESP32-S3-ETH](https://www.waveshare.com/esp32-s3-eth.htm) board.
-> A single Ethernet cable then both powers the netpack and connects it to the
-> network — no separate USB power supply needed at the field. Without PoE, power
-> it over its USB-C port.
+> If you have a **PoE (Power-over-Ethernet) switch**, use a PoE-capable board —
+> a single Ethernet cable then both powers the netpack and connects it to the
+> network, with no separate USB power supply needed at the field. Without PoE,
+> power the board over its USB port.
 
-Since this board uses W5500 ethernet chip, the newest versions of ESP-IDF 
-are used directly. The W5500 is not currently supported by the Arduino ESP32 
-versions included in PlatformIO.
+Since the Waveshare board uses the W5500 ethernet chip, the newest versions of
+ESP-IDF are used directly. The W5500 is not currently supported by the Arduino
+ESP32 versions included in PlatformIO.
 
 > [!NOTE]
 > Support for the W5500 was added in v5.0 of ESP-IDF, PlatformIO is limited to
@@ -45,23 +49,39 @@ To install the ELRS Netpack firmware, use the [Netpack Installer](https://github
 
 ### Flashing a prebuilt image
 
-Grab the firmware from the [**Releases**](../../releases) page — each release is
-named after the board it supports (e.g. *ELRS Netpack v1.0.0 — Waveshare
-ESP32-S3-ETH*) and ships two assets:
+Grab the firmware from the [**Releases**](../../releases) page — each release
+ships two assets **per supported board**; pick the ones whose name contains
+your board's slug (`waveshare-esp32-s3-eth` or `olimex-esp32-poe-iso`):
 
-- `elrs-netpack-<version>-waveshare-esp32-s3-eth-merged.bin` — the bootloader,
-  partition table and application **merged into one file**, flashed in one step
-  at offset `0x0`. **This is the one you want.**
-- `elrs-netpack-<version>-waveshare-esp32-s3-eth-binaries.zip` — the individual
-  binaries (bootloader / partition table / app) with their flash offsets, for
-  advanced use.
+- `elrs-netpack-<version>-<board>-merged.bin` — the bootloader, partition
+  table and application **merged into one file**, flashed in one step at
+  offset `0x0`. **This is the one you want.**
+- `elrs-netpack-<version>-<board>-binaries.zip` — the individual binaries
+  (bootloader / partition table / app) with their flash offsets, for advanced
+  use.
 
-(Development builds of the same merged image are also produced by every CI run
-on `main` — see the GitHub Actions build artifacts.)
+(Development builds of the same merged images are also produced by every CI
+run on `main` — see the GitHub Actions build artifacts.)
 
-The Waveshare ESP32-S3 uses the chip's **native USB**, so on Windows 10/11,
-macOS and Linux it appears as a serial port with **no driver to install** —
-just connect the board's **USB-C** port to your computer.
+How the board connects to your computer differs:
+
+- **Waveshare ESP32-S3-ETH** uses the chip's **native USB**, so on Windows
+  10/11, macOS and Linux it appears as a serial port with **no driver to
+  install** — just connect the board's **USB-C** port. esptool chip name:
+  `esp32s3`; typical port: `COMx` / `/dev/cu.usbmodem*` / `/dev/ttyACM0`.
+- **Olimex ESP32-POE-ISO** connects over its **micro-USB** port through a
+  CH340 USB-serial converter — Windows and macOS may need the
+  [CH340 driver](https://www.wch-ic.com/downloads/CH341SER_ZIP.html) (Linux
+  has it built in). esptool chip name: `esp32`; typical port: `COMx` /
+  `/dev/cu.wchusbserial*` / `/dev/ttyUSB0`.
+
+> [!WARNING]
+> On the **non-isolated** Olimex ESP32-POE, never have PoE Ethernet and USB
+> connected at the same time — it can damage the board and your computer. The
+> **ISO** variants are isolated and safe.
+
+The command examples below use the Waveshare board — for the Olimex,
+substitute `--chip esp32` and its port name.
 
 #### Option A — Web flasher (easiest; Windows, macOS &amp; Linux, nothing to install)
 
@@ -139,19 +159,31 @@ Install esptool once — it needs Python 3:
 #### Flashing the individual binaries (advanced)
 
 The `…-binaries.zip` release asset contains the three parts the merged image is
-built from. Flash them at these offsets (same command on every OS, adjust the
-port):
+built from, plus a `README.txt` with the exact command for that board. The
+bootloader offset differs by chip — `0x0` on the ESP32-S3 (Waveshare), `0x1000`
+on the classic ESP32 (Olimex):
 
 ```
+# Waveshare ESP32-S3-ETH
 esptool.py --chip esp32s3 --port <PORT> --baud 921600 write_flash \
   0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin
+
+# Olimex ESP32-POE-ISO
+esptool.py --chip esp32 --port <PORT> --baud 921600 write_flash \
+  0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin
 ```
 
 ### Releases (maintainers)
 
 **Every commit pushed to `main` is released automatically** — CI builds the
-firmware and publishes a release versioned `v1.0.<build-number>`, named after
-the supported hardware, with the merged image + individual binaries attached.
+firmware for every supported board and publishes a release versioned
+`v1.0.<build-number>` with each board's merged image + individual binaries
+attached. Boards are defined by the `sdkconfig.board.<slug>` files and the
+matrix in `.github/workflows/build.yml`; to build one locally:
+
+```
+idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.board.olimex-esp32-poe-iso" set-target esp32 build
+```
 
 To cut a milestone release under a specific version instead, push a tag:
 
@@ -162,7 +194,7 @@ git push bob9 v2.0.0
 
 ## Network Configuration
 
-The netpack connects to your network over its Ethernet (W5500) port and serves
+The netpack connects to your network over its Ethernet port and serves
 the MSP socket on TCP port `8080` (configurable). A race timer / venue agent
 connects to `<netpack-ip>:8080`.
 
@@ -177,11 +209,12 @@ There are two ways the board can get its IP address:
 ### Setting a static IP — no rebuild needed
 
 Network settings are stored on the device and can be changed at any time over
-the **USB-C port** (the same one used for flashing) with any serial terminal —
+the **USB port** (the same one used for flashing) with any serial terminal —
 no toolchain or rebuild required.
 
-1. Connect the board's USB-C port to your computer.
-2. Open a serial terminal on the board's port (any baud rate works over USB),
+1. Connect the board's USB port to your computer.
+2. Open a serial terminal on the board's port (115200 baud on the Olimex; any
+   baud rate works on the Waveshare's native USB),
    e.g. `idf.py monitor`, `screen /dev/ttyACM0`, PuTTY, or the serial console
    in a Chrome-based web tool such as
    [serial.huhn.me](https://serial.huhn.me/).

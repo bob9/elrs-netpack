@@ -47,7 +47,7 @@ static void initialize_mdns(esp_netif_t *eth_netif)
     ESP_ERROR_CHECK(mdns_hostname_set("elrs-netpack"));
 
     mdns_txt_item_t serviceTxtData[3] = {
-        {"board", "esp32s3"},
+        {"board", CONFIG_IDF_TARGET},
         {"type", "time"},
         {"project", "elrs-netpack"}};
 

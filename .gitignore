@@ -1,5 +1,7 @@
 **/build
+sdkconfig
 sdkconfig.old
 **/.vscode
 **/managed_components
-*.lock.cache/
+*.lock
+.cache/
