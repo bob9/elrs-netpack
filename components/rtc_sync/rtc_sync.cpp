@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 #include "freertos/ringbuf.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_console.h"
 #include "esp_netif_sntp.h"
 #include "nvs_flash.h"
@@ -29,6 +30,9 @@
 #define RTC_RESYNC_INTERVAL_MS 60000
 // Until the first successful send, check for a synced clock more frequently
 #define RTC_RETRY_INTERVAL_MS 5000
+// While an external time source (the TCP client, e.g. dd-pits) is actively
+// sending SET_RTC, our own broadcasts pause for this long after each one
+#define RTC_EXTERNAL_HOLDOFF_US (5LL * 60 * 1000000)
 
 static const char *TAG = "rtc_sync";
 
@@ -37,6 +41,15 @@ static TaskHandle_t rtcTaskHandle = NULL;
 
 static char ntp_server[64] = DEFAULT_NTP_SERVER;
 static char tz_string[64] = DEFAULT_TZ;
+
+// esp_timer time of the last externally-received SET_RTC, 0 = never
+static volatile int64_t last_external_us = 0;
+
+static bool external_source_active(void)
+{
+    int64_t seen = last_external_us;
+    return seen != 0 && esp_timer_get_time() - seen < RTC_EXTERNAL_HOLDOFF_US;
+}
 
 static void load_config(void)
 {
@@ -122,6 +135,12 @@ static void runRTCTask(void *pvParameters)
         // Wake early if an immediate send was requested via rtc_sync_send_now
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(synced ? RTC_RESYNC_INTERVAL_MS : RTC_RETRY_INTERVAL_MS));
 
+        // An external sender (dd-pits over TCP) is already broadcasting the
+        // time - its packets are forwarded as-is, so stay quiet to avoid two
+        // sources fighting over the goggle clocks
+        if (external_source_active())
+            continue;
+
         if (send_rtc_packet() && !synced)
         {
             synced = true;
@@ -134,6 +153,29 @@ void rtc_sync_send_now(void)
 {
     if (rtcTaskHandle != NULL)
         xTaskNotifyGive(rtcTaskHandle);
+}
+
+void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
+{
+    if (size < 6)
+        return;
+
+    // The sender transmits local wall time; interpret it under our
+    // configured TZ so localtime_r round-trips the same fields (with the
+    // default UTC0 TZ the fields pass through 1:1)
+    struct tm timeData = {};
+    timeData.tm_year = payload[0];
+    timeData.tm_mon = payload[1];
+    timeData.tm_mday = payload[2];
+    timeData.tm_hour = payload[3];
+    timeData.tm_min = payload[4];
+    timeData.tm_sec = payload[5];
+    timeData.tm_isdst = -1;
+
+    timeval tv = {mktime(&timeData), 0};
+    settimeofday(&tv, NULL);
+
+    last_external_us = esp_timer_get_time();
 }
 
 static int cmd_timeconfig(int argc, char **argv)

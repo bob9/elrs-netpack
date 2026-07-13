@@ -372,6 +372,14 @@ void runESPNOWServer(void *pvParameters)
 
                     break;
                 }
+                case MSP_ELRS_BACKPACK_SET_RTC:
+                {
+                    // The TCP client (e.g. dd-pits) is sending the time: seed
+                    // our own clock from it and pause the SNTP broadcasts,
+                    // then fall through to forward the packet to the goggles
+                    rtc_sync_external_time(packet->payload, packet->payloadSize);
+                }
+                // fall through
                 default:
                 {
                     sendAttempt = 0;

@@ -246,7 +246,11 @@ server (e.g. the machine running the race timer) with
 `timeconfig server <ip>`. Alternatively, anything connected to the TCP socket
 can push an `MSP_ELRS_BACKPACK_SET_RTC` packet with 6 payload bytes (years
 since 1900, month 0-11, day, hour, minute, second in local time) and it is
-forwarded to the goggles as-is.
+forwarded to the goggles as-is. A TCP client that sends the time (the
+`dd-pits` venue agent does this automatically) is treated as **authoritative**:
+the netpack seeds its own clock from it and pauses its NTP-based broadcasts
+while the client keeps sending, so the two sources never fight — with dd-pits
+connected, no `timeconfig` setup is needed at all.
 
 > [!NOTE]
 > The goggles-side handling requires the ExpressLRS Backpack firmware on the
