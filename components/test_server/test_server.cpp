@@ -128,7 +128,15 @@ static const char *do_osd(const uint8_t uid[6], const char *text, int row)
     seq[1].addByte((uint8_t)((50 - len) / 2)); // centered
     seq[1].addByte(0);
     for (size_t i = 0; i < len; i++)
-        seq[1].addByte(text[i]);
+    {
+        // The goggles index their Betaflight-layout OSD font directly with
+        // this byte: only 0x20-0x5F match ASCII (no lowercase - that range
+        // holds the arrow glyphs), so fold to uppercase and blank the rest.
+        char c = (char)toupper((unsigned char)text[i]);
+        if (c < 0x20 || c > 0x5F)
+            c = ' ';
+        seq[1].addByte(c);
+    }
 
     packet_init(&seq[2], MSP_ELRS_SET_OSD);
     seq[2].addByte(0x04); // display
@@ -172,14 +180,18 @@ static const char *do_time(const uint8_t uid[6])
     p.addByte(timeData.tm_hour);
     p.addByte(timeData.tm_min);
     p.addByte(timeData.tm_sec);
+    // Our packet loops through the ESPNOW task's SET_RTC handling; without
+    // this it would register as an external time source and pause the
+    // netpack's own periodic sync for the holdoff period
+    rtc_sync_note_self_send();
     return queue_targeted(uid, &p, 1) ? NULL : "send queue full";
 }
 
 static const char *do_dvr(const uint8_t uid[6], const char *label)
 {
     size_t len = strlen(label);
-    if (len == 0 || len > 32)
-        return "label must be 1-32 characters";
+    if (len == 0 || len > 43)
+        return "label must be 1-43 characters";
     mspPacket_t p;
     packet_init(&p, MSP_ELRS_BACKPACK_SET_DVR_NAME);
     for (size_t i = 0; i < len; i++)
@@ -215,6 +227,7 @@ static const char PAGE[] = R"HTML(<!DOCTYPE html>
  <label>Row (0-17)</label><input id="row" type="number" min="0" max="17" value="4">
  <button onclick="send('osd')">Show message</button>
  <button class="warn" onclick="send('clear')">Clear OSD</button>
+ <small>The goggle OSD font is uppercase-only; lowercase is sent as capitals.</small>
 </div>
 <div class="card"><h2>Channel change</h2>
  <select id="channel">
