@@ -14,3 +14,7 @@ CONFIG_ETHERNET_SPI_PHY_ADDR0=1
 
 # Serial console on the chip's native USB port
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Board has 16 MB flash; two 3 MB OTA slots
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16mb.csv"

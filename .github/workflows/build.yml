@@ -63,6 +63,7 @@ jobs:
         path: |
           build/bootloader/bootloader.bin
           build/partition_table/partition-table.bin
+          build/ota_data_initial.bin
           build/elrs-netpack.bin
 
     # Every push to main gets an auto-versioned release (v1.0.<run>); pushing
@@ -88,17 +89,22 @@ jobs:
         VERSION="${{ steps.ver.outputs.version }}"
         mkdir -p release
         cp build/elrs-netpack-merged.bin "release/elrs-netpack-${VERSION}-${HARDWARE_SLUG}-merged.bin"
+        cp build/elrs-netpack.bin "release/elrs-netpack-${VERSION}-${HARDWARE_SLUG}-ota.bin"
         mkdir -p parts
         cp build/bootloader/bootloader.bin parts/
         cp build/partition_table/partition-table.bin parts/
+        cp build/ota_data_initial.bin parts/
         cp build/elrs-netpack.bin parts/
         printf '%s\n' \
           "Individual binaries for esptool (board: ${HARDWARE}, chip: ${CHIP}):" \
           "" \
           "  esptool --chip ${CHIP} --port <PORT> --baud 921600 write_flash \\" \
-          "    ${BOOTLOADER_OFFSET} bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin" \
+          "    ${BOOTLOADER_OFFSET} bootloader.bin 0x8000 partition-table.bin \\" \
+          "    0x10000 ota_data_initial.bin 0x20000 elrs-netpack.bin" \
           "" \
-          "Most users should flash the single merged image at 0x0 instead." \
+          "Most users should flash the single merged image at 0x0 instead," \
+          "or update a running netpack over the network at http://elrs-netpack.local/" \
+          "using the -ota.bin asset." \
           > parts/README.txt
         (cd parts && zip -j "../release/elrs-netpack-${VERSION}-${HARDWARE_SLUG}-binaries.zip" *)
 
@@ -149,8 +155,11 @@ jobs:
 
           ## Which file do I need?
 
-          - `…-merged.bin` — the whole firmware in one file. Flash it at offset `0x0`. **Use this one.**
-          - `…-binaries.zip` — the individual bootloader / partition-table / app binaries, for advanced use (offsets in the included README).
+          - `…-ota.bin` — for updating a Netpack **already running firmware with OTA support**: browse to `http://elrs-netpack.local/` (or the device's IP) and drag this file onto the update page. No USB needed.
+          - `…-merged.bin` — the whole firmware in one file, for **USB flashing**. Flash it at offset `0x0`.
+          - `…-binaries.zip` — the individual bootloader / partition-table / OTA-data / app binaries, for advanced use (offsets in the included README).
+
+          Devices running firmware from before OTA support must be flashed once over USB; after that, updates can be installed from the browser.
 
           ## Flashing
 

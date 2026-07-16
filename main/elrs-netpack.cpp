@@ -7,6 +7,7 @@
 #include "nvs_flash.h"
 #include "espnow_server.h"
 #include "tcp_server.h"
+#include "ota_server.h"
 #include "net_config.h"
 #include "rtc_sync.h"
 #include "test_server.h"
@@ -58,9 +59,11 @@ extern "C" void app_main(void)
     // the same buffer the TCP server uses for outgoing ESPNOW packets
     rtc_sync_start(xRingReceivedSocket);
 
-    // HTTP test page (port 80): fire OSD/channel/time test messages at a
-    // goggle by bind phrase, to verify the link at the field
-    test_server_start(xRingReceivedSocket);
+    // Web server (port 80): drag-and-drop firmware update page at "/",
+    // plus the goggle test page at "/test" for firing OSD/channel/time
+    // test messages at a goggle by bind phrase
+    httpd_handle_t web_server = ota_server_start();
+    test_server_start(web_server, xRingReceivedSocket);
 
     // Serial console on the USB port for setting network details (see 'netconfig')
     net_config_start_console();

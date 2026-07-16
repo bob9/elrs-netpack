@@ -47,18 +47,37 @@ To install the ELRS Netpack firmware, use the [Netpack Installer](https://github
 > [VRxC_ELRS](https://github.com/bob9/VRxC_ELRS) for the USB backpack and
 > HDZero goggle setup.
 
+### Updating over the network (OTA) — no USB needed
+
+A Netpack that is already running this firmware can update itself over
+Ethernet:
+
+1. Browse to **`http://elrs-netpack.local/`** (or `http://<the-device-ip>/`).
+2. Drag the `…-ota.bin` file from the [Releases](../../releases) page onto the
+   page (or click to browse for it) and press **Install firmware**.
+3. The device verifies the image, writes it to the standby OTA slot, and
+   reboots into it. Network settings are kept.
+
+> [!NOTE]
+> OTA takes the **`…-ota.bin`** asset (the app image alone). The merged image
+> is only for USB flashing — the page will reject it. Devices running firmware
+> from before OTA support was added must be flashed **once over USB** (below)
+> to receive the new partition layout; every update after that can be OTA.
+
 ### Flashing a prebuilt image
 
 Grab the firmware from the [**Releases**](../../releases) page — each release
-ships two assets **per supported board**; pick the ones whose name contains
+ships three assets **per supported board**; pick the ones whose name contains
 your board's slug (`waveshare-esp32-s3-eth` or `olimex-esp32-poe-iso`):
 
 - `elrs-netpack-<version>-<board>-merged.bin` — the bootloader, partition
   table and application **merged into one file**, flashed in one step at
-  offset `0x0`. **This is the one you want.**
+  offset `0x0`. **This is the one you want for USB flashing.**
+- `elrs-netpack-<version>-<board>-ota.bin` — the app image alone, for the
+  drag-and-drop **network update page** (see above).
 - `elrs-netpack-<version>-<board>-binaries.zip` — the individual binaries
-  (bootloader / partition table / app) with their flash offsets, for advanced
-  use.
+  (bootloader / partition table / OTA data / app) with their flash offsets,
+  for advanced use.
 
 (Development builds of the same merged images are also produced by every CI
 run on `main` — see the GitHub Actions build artifacts.)
@@ -158,7 +177,7 @@ Install esptool once — it needs Python 3:
 
 #### Flashing the individual binaries (advanced)
 
-The `…-binaries.zip` release asset contains the three parts the merged image is
+The `…-binaries.zip` release asset contains the parts the merged image is
 built from, plus a `README.txt` with the exact command for that board. The
 bootloader offset differs by chip — `0x0` on the ESP32-S3 (Waveshare), `0x1000`
 on the classic ESP32 (Olimex):
@@ -166,12 +185,18 @@ on the classic ESP32 (Olimex):
 ```
 # Waveshare ESP32-S3-ETH
 esptool.py --chip esp32s3 --port <PORT> --baud 921600 write_flash \
-  0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin
+  0x0 bootloader.bin 0x8000 partition-table.bin \
+  0x10000 ota_data_initial.bin 0x20000 elrs-netpack.bin
 
 # Olimex ESP32-POE-ISO
 esptool.py --chip esp32 --port <PORT> --baud 921600 write_flash \
-  0x1000 bootloader.bin 0x8000 partition-table.bin 0x10000 elrs-netpack.bin
+  0x1000 bootloader.bin 0x8000 partition-table.bin \
+  0x10000 ota_data_initial.bin 0x20000 elrs-netpack.bin
 ```
+
+(`ota_data_initial.bin` resets the OTA slot selector so the bootloader starts
+the app you just flashed to `ota_0` at `0x20000`, rather than an old image
+left in the other slot.)
 
 ### Releases (maintainers)
 
@@ -196,7 +221,10 @@ git push bob9 v2.0.0
 
 The netpack connects to your network over its Ethernet port and serves
 the MSP socket on TCP port `8080` (configurable). A race timer / venue agent
-connects to `<netpack-ip>:8080`.
+connects to `<netpack-ip>:8080`. The device also serves its **firmware update
+page** on port `80` — browsing to `http://<netpack-ip>/` (or
+`http://elrs-netpack.local/`) shows the device's version and lets you install
+updates over the network.
 
 There are two ways the board can get its IP address:
 

@@ -52,6 +52,7 @@ static void initialize_mdns(esp_netif_t *eth_netif)
         {"project", "elrs-netpack"}};
 
     ESP_ERROR_CHECK(mdns_service_add("ExpressLRS Backpack", "_elrs-backpack", "_tcp", CONFIG_TCP_SERVER_PORT, serviceTxtData, 3));
+    ESP_ERROR_CHECK(mdns_service_add("ELRS Netpack Firmware Update", "_http", "_tcp", CONFIG_OTA_SERVER_PORT, NULL, 0));
 
     ESP_ERROR_CHECK(mdns_register_netif(eth_netif));
     ESP_ERROR_CHECK(mdns_netif_action(eth_netif, MDNS_EVENT_ENABLE_IP4));

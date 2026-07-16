@@ -418,27 +418,22 @@ static esp_err_t api_post(httpd_req_t *req)
     return httpd_resp_sendstr(req, resp);
 }
 
-void test_server_start(RingbufHandle_t espnow_out)
+void test_server_start(httpd_handle_t server, RingbufHandle_t espnow_out)
 {
     xRingEspnowOut = espnow_out;
 
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 80;
-    config.lru_purge_enable = true;
-
-    httpd_handle_t server = NULL;
-    if (httpd_start(&server, &config) != ESP_OK)
+    if (server == NULL)
     {
-        ESP_LOGE(TAG, "Failed to start HTTP test server");
+        ESP_LOGE(TAG, "No HTTP server to register the test page on");
         return;
     }
 
-    static const httpd_uri_t root = {.uri = "/", .method = HTTP_GET, .handler = root_get, .user_ctx = NULL};
+    static const httpd_uri_t root = {.uri = "/test", .method = HTTP_GET, .handler = root_get, .user_ctx = NULL};
     static const httpd_uri_t api = {.uri = "/api/test", .method = HTTP_POST, .handler = api_post, .user_ctx = NULL};
     static const httpd_uri_t clk = {.uri = "/api/clock", .method = HTTP_GET, .handler = clock_get, .user_ctx = NULL};
     httpd_register_uri_handler(server, &root);
     httpd_register_uri_handler(server, &api);
     httpd_register_uri_handler(server, &clk);
 
-    ESP_LOGI(TAG, "Goggle test page on http://<netpack-ip>/ (port 80)");
+    ESP_LOGI(TAG, "Goggle test page on http://<netpack-ip>/test");
 }

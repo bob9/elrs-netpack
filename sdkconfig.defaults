@@ -2,6 +2,9 @@
 # Board selection lives in sdkconfig.board.<board-slug>; build with e.g.
 #   idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.board.waveshare-esp32-s3-eth" set-target esp32s3 build
 CONFIG_COMPILER_ORPHAN_SECTIONS_PLACE=y
+# Two-slot OTA layout for network firmware updates; the CSV (sized to the
+# board's flash) is chosen in sdkconfig.board.<board-slug>
+CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=512
 CONFIG_LOG_COLORS=y
 CONFIG_LWIP_LOCAL_HOSTNAME="elrs-netpack"
@@ -10,7 +13,8 @@ CONFIG_LWIP_DHCPS=n
 CONFIG_LWIP_HOOK_IP6_INPUT_NONE=y
 CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y
 CONFIG_MDNS_MAX_INTERFACES=1
-CONFIG_MDNS_MAX_SERVICES=1
+# One service for the MSP socket (_elrs-backpack), one for the update page (_http)
+CONFIG_MDNS_MAX_SERVICES=2
 CONFIG_MDNS_ENABLE_CONSOLE_CLI=n
 CONFIG_MDNS_RESPOND_REVERSE_QUERIES=y
 CONFIG_MDNS_MULTIPLE_INSTANCE=n

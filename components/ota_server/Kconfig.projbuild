@@ -1,0 +1,9 @@
+menu "ELRS Netpack OTA Server Configuration"
+
+    config OTA_SERVER_PORT
+        int "OTA web server port"
+        default 80
+        help
+            TCP port for the firmware update web page and OTA upload endpoint.
+
+endmenu

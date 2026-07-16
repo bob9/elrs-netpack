@@ -18,8 +18,9 @@ CONFIG_ETHERNET_EXT_OSC_EN_GPIO_NUM=12
 CONFIG_ETH_RMII_CLK_OUTPUT=y
 CONFIG_ETH_RMII_CLK_OUT_GPIO=17
 
-# WROOM-32E module has 4 MB flash
+# WROOM-32E module has 4 MB flash; two 1.875 MB OTA slots
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_4mb.csv"
 
 # Console stays on UART0 (the board's micro-USB via CH340); no USB-Serial-JTAG
 # on the classic ESP32.

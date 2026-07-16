@@ -1,0 +1,9 @@
+# ELRS Netpack partition table — 4MB flash, two OTA app slots.
+# NVS keeps the stock singleapp offset/size (0x9000/0x6000) so device settings
+# survive the one-time USB reflash from the old single-app layout.
+# Name,    Type, SubType, Offset,   Size
+nvs,       data, nvs,     0x9000,   0x6000
+phy_init,  data, phy,     0xf000,   0x1000
+otadata,   data, ota,     0x10000,  0x2000
+ota_0,     app,  ota_0,   0x20000,  0x1E0000
+ota_1,     app,  ota_1,   0x200000, 0x1E0000
