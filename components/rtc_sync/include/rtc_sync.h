@@ -26,3 +26,9 @@ void rtc_sync_set_clock(const uint8_t *payload, uint16_t size);
 // authoritative: periodic SNTP-based broadcasts pause while it keeps
 // sending, so the two sources never fight over the goggle clocks.
 void rtc_sync_external_time(const uint8_t *payload, uint16_t size);
+
+// Announce that a SET_RTC packet queued by another component (e.g. the test
+// page) is about to loop through the ESPNOW task, so rtc_sync_external_time
+// doesn't mistake it for an external time source and pause the periodic
+// broadcasts. Call before queueing the packet.
+void rtc_sync_note_self_send(void);

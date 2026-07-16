@@ -196,6 +196,11 @@ void rtc_sync_external_time(const uint8_t *payload, uint16_t size)
         last_external_us.store(esp_timer_get_time());
 }
 
+void rtc_sync_note_self_send(void)
+{
+    self_pending.fetch_add(1);
+}
+
 void rtc_sync_set_clock(const uint8_t *payload, uint16_t size)
 {
     if (!seed_clock(payload, size))

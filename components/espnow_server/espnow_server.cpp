@@ -373,21 +373,14 @@ void runESPNOWServer(void *pvParameters)
                     break;
                 }
                 case MSP_ELRS_BACKPACK_SET_RTC:
-                {
                     // The TCP client (e.g. dd-pits) is sending the time: seed
                     // our own clock from it and pause the SNTP broadcasts
-                    // (no-op for our own queued time packets)
+                    // (no-op for our own queued time packets), then send it
+                    // over ESPNOW with the normal retry loop below - a single
+                    // unacked attempt right after a SET_SEND_UID MAC change
+                    // is too easily lost
                     rtc_sync_external_time(packet->payload, packet->payloadSize);
-
-                    // Fire-and-forget: a time message to powered-off goggles
-                    // can never be acked and is re-sent every minute anyway,
-                    // so don't spend the retry budget that OSD traffic could
-                    // be queued behind. The send callback is still consumed
-                    // so it can't leak into the next packet's ack wait.
-                    if (sendMSPViaEspnow(packet) == ESP_OK)
-                        xTaskNotifyWait(0x00, ULONG_MAX, &sendSuccess, portMAX_DELAY);
-                    break;
-                }
+                    [[fallthrough]];
                 default:
                 {
                     sendAttempt = 0;
