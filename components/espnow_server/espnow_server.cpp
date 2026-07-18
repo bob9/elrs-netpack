@@ -35,6 +35,83 @@ static RingbufHandle_t xRingReceivedEspnow = NULL;
 
 static bool isBinding = false;
 
+// --- Absent-peer send suppression -------------------------------------------
+// A goggle that's powered off (or out of range) never acks, so one frame to it
+// burns the full CONFIG_ESPNOW_MAX_SEND_ATTEMPTS retry budget — serially, on
+// the single TCP→ESP-NOW queue — delaying every message queued behind it.
+// After a full-retry failure the peer goes on a short cooldown: sends to it
+// are skipped instantly until the cooldown lapses, at which point one probe
+// send re-detects it. A goggle powering up mid-meeting starts receiving again
+// within one cooldown of the next message addressed to it.
+#define SUPPRESS_MAX_PEERS 32
+#define SUPPRESS_COOLDOWN_MS 5000
+
+typedef struct
+{
+    uint8_t mac[6];
+    TickType_t until;
+    bool used;
+} suppressed_peer_t;
+
+static suppressed_peer_t suppressedPeers[SUPPRESS_MAX_PEERS];
+
+static bool peerSuppressed(const uint8_t *mac)
+{
+    TickType_t now = xTaskGetTickCount();
+    for (int i = 0; i < SUPPRESS_MAX_PEERS; i++)
+    {
+        if (suppressedPeers[i].used && memcmp(suppressedPeers[i].mac, mac, 6) == 0)
+        {
+            if ((int32_t)(suppressedPeers[i].until - now) > 0)
+                return true;
+            suppressedPeers[i].used = false; // cooldown lapsed → allow a probe
+            return false;
+        }
+    }
+    return false;
+}
+
+static void suppressPeer(const uint8_t *mac)
+{
+    int slot = -1;
+    for (int i = 0; i < SUPPRESS_MAX_PEERS; i++)
+    {
+        if (suppressedPeers[i].used && memcmp(suppressedPeers[i].mac, mac, 6) == 0)
+        {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0)
+    {
+        for (int i = 0; i < SUPPRESS_MAX_PEERS; i++)
+        {
+            if (!suppressedPeers[i].used)
+            {
+                slot = i;
+                break;
+            }
+        }
+    }
+    if (slot < 0)
+        slot = 0; // table full: reclaim the first entry
+    memcpy(suppressedPeers[slot].mac, mac, 6);
+    suppressedPeers[slot].until = xTaskGetTickCount() + pdMS_TO_TICKS(SUPPRESS_COOLDOWN_MS);
+    suppressedPeers[slot].used = true;
+}
+
+static void unsuppressPeer(const uint8_t *mac)
+{
+    for (int i = 0; i < SUPPRESS_MAX_PEERS; i++)
+    {
+        if (suppressedPeers[i].used && memcmp(suppressedPeers[i].mac, mac, 6) == 0)
+        {
+            suppressedPeers[i].used = false;
+            return;
+        }
+    }
+}
+
 static void sendInProgressResponse()
 {
     mspPacket_t out;
@@ -383,12 +460,27 @@ void runESPNOWServer(void *pvParameters)
                     [[fallthrough]];
                 default:
                 {
+                    // Skip peers on failure cooldown so an absent goggle can't
+                    // head-of-line-block the live OSD queue (see suppression
+                    // note above).
+                    if (peerSuppressed(sendAddress))
+                    {
+                        ESP_LOGD(TAG, "Skipping send to unresponsive peer");
+                        break;
+                    }
+
                     sendAttempt = 0;
+                    sendSuccess = 0; // never inherit the previous packet's result
                     do
                     {
                         sendStatus = sendMSPViaEspnow(packet);
                         if (sendStatus == ESP_OK)
-                            xTaskNotifyWait(0x00, ULONG_MAX, &sendSuccess, portMAX_DELAY);
+                        {
+                            // Bounded wait: a lost send callback must fail the
+                            // attempt, not hang the send task forever.
+                            if (xTaskNotifyWait(0x00, ULONG_MAX, &sendSuccess, pdMS_TO_TICKS(500)) != pdTRUE)
+                                sendSuccess = 0;
+                        }
                         else
                         {
                             ESP_LOGW(TAG, "ESPNOW message send status: %d", sendStatus);
@@ -396,6 +488,20 @@ void runESPNOWServer(void *pvParameters)
                         }
                         vTaskDelay(espnowDelay);
                     } while (++sendAttempt < CONFIG_ESPNOW_MAX_SEND_ATTEMPTS && !sendSuccess);
+
+                    if (sendSuccess)
+                        unsuppressPeer(sendAddress);
+                    else if (sendStatus == ESP_OK)
+                    {
+                        // Every attempt was clocked out and none was acked —
+                        // the peer is off/out of range, not a transient local
+                        // error. Pause sends to it so queued traffic for other
+                        // pilots isn't delayed behind its retry budget.
+                        suppressPeer(sendAddress);
+                        ESP_LOGW(TAG, "Peer [%d,%d,%d,%d,%d,%d] unresponsive after %d attempts; pausing sends to it for %dms",
+                                 sendAddress[0], sendAddress[1], sendAddress[2], sendAddress[3], sendAddress[4], sendAddress[5],
+                                 sendAttempt, SUPPRESS_COOLDOWN_MS);
+                    }
 
                     ESP_LOGI(TAG, "ESPNOW message send attempts: %d", sendAttempt);
                     break;
