@@ -20,6 +20,7 @@
 #define STORAGE_NAMESPACE "netpack"
 #define STORAGE_TZ_KEY "time_tz"
 #define STORAGE_NTP_KEY "time_ntp"
+#define STORAGE_BCAST_KEY "time_bcast"
 
 #define DEFAULT_NTP_SERVER "pool.ntp.org"
 #define DEFAULT_TZ "UTC0"
@@ -42,6 +43,18 @@ static TaskHandle_t rtcTaskHandle = NULL;
 
 static char ntp_server[64] = DEFAULT_NTP_SERVER;
 static char tz_string[64] = DEFAULT_TZ;
+
+// Periodic time broadcasts go to the DEFAULT send UID (the netpack's own bind
+// phrase), which only goggles bound to that phrase ever hear. At venues where
+// every goggle runs a personal phrase (the dd-pits per-pilot setup) nobody is
+// listening, so the broadcast is pure queue traffic — off by default. Explicit
+// requests (a VRX asking via MSP_ELRS_REQU_VTX_PKT, or the test page setting
+// the clock) are still answered: something asking means something is bound.
+static bool broadcast_enabled = false;
+
+// Set when an immediate send was explicitly requested (rtc_sync_send_now);
+// honoured even with the periodic broadcast disabled.
+static std::atomic<bool> send_requested{false};
 
 // esp_timer time of the last externally-received SET_RTC, 0 = never
 static std::atomic<int64_t> last_external_us{0};
@@ -66,6 +79,9 @@ static void load_config(void)
     nvs_get_str(handle, STORAGE_TZ_KEY, tz_string, &len);
     len = sizeof(ntp_server);
     nvs_get_str(handle, STORAGE_NTP_KEY, ntp_server, &len);
+    uint8_t bcast = 0;
+    if (nvs_get_u8(handle, STORAGE_BCAST_KEY, &bcast) == ESP_OK)
+        broadcast_enabled = bcast != 0;
 
     nvs_close(handle);
 }
@@ -81,7 +97,8 @@ static esp_err_t save_config(void)
     }
 
     if ((err = nvs_set_str(handle, STORAGE_TZ_KEY, tz_string)) == ESP_OK &&
-        (err = nvs_set_str(handle, STORAGE_NTP_KEY, ntp_server)) == ESP_OK)
+        (err = nvs_set_str(handle, STORAGE_NTP_KEY, ntp_server)) == ESP_OK &&
+        (err = nvs_set_u8(handle, STORAGE_BCAST_KEY, broadcast_enabled ? 1 : 0)) == ESP_OK)
         err = nvs_commit(handle);
 
     if (err != ESP_OK)
@@ -141,6 +158,13 @@ static void runRTCTask(void *pvParameters)
         // Wake early if an immediate send was requested via rtc_sync_send_now
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(synced ? RTC_RESYNC_INTERVAL_MS : RTC_RETRY_INTERVAL_MS));
 
+        bool requested = send_requested.exchange(false);
+
+        // Unsolicited periodic broadcasts are opt-in ('timeconfig broadcast
+        // on'); an explicit request is always honoured
+        if (!broadcast_enabled && !requested)
+            continue;
+
         // An external sender (dd-pits over TCP) is already broadcasting the
         // time - its packets are forwarded as-is, so stay quiet to avoid two
         // sources fighting over the goggle clocks
@@ -157,6 +181,7 @@ static void runRTCTask(void *pvParameters)
 
 void rtc_sync_send_now(void)
 {
+    send_requested.store(true);
     if (rtcTaskHandle != NULL)
         xTaskNotifyGive(rtcTaskHandle);
 }
@@ -217,6 +242,8 @@ static int cmd_timeconfig(int argc, char **argv)
     {
         printf("NTP server: %s\n", ntp_server);
         printf("Timezone:   %s (POSIX TZ format)\n", tz_string);
+        printf("Broadcast:  %s (periodic time sends to the default bind-phrase UID)\n",
+               broadcast_enabled ? "on" : "off");
 
         time_t now = time(NULL);
         if (now < RTC_VALID_EPOCH)
@@ -261,10 +288,30 @@ static int cmd_timeconfig(int argc, char **argv)
         return 0;
     }
 
+    if (strcmp(argv[1], "broadcast") == 0)
+    {
+        if (argc < 3 || (strcmp(argv[2], "on") != 0 && strcmp(argv[2], "off") != 0))
+        {
+            printf("Usage: timeconfig broadcast on|off\n");
+            return 1;
+        }
+        broadcast_enabled = strcmp(argv[2], "on") == 0;
+        if (save_config() != ESP_OK)
+            return 1;
+        printf("Saved: periodic time broadcast %s (applied immediately)\n", broadcast_enabled ? "on" : "off");
+        if (broadcast_enabled)
+            rtc_sync_send_now();
+        return 0;
+    }
+
     printf("Usage:\n"
            "  timeconfig                     Show time settings and current local time\n"
            "  timeconfig tz <posix-tz>       Set the timezone, e.g. AEST-10 or AEST-10AEDT,M10.1.0,M4.1.0/3\n"
-           "  timeconfig server <host|ip>    Set the NTP server (reboot to apply)\n");
+           "  timeconfig server <host|ip>    Set the NTP server (reboot to apply)\n"
+           "  timeconfig broadcast on|off    Periodic time sends to the default bind-phrase UID\n"
+           "                                 (off by default; only useful when goggles are bound\n"
+           "                                 to the netpack's own phrase. dd-pits syncs per-pilot\n"
+           "                                 goggle clocks regardless of this setting)\n");
     return 1;
 }
 
