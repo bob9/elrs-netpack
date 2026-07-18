@@ -51,6 +51,14 @@
 #define MSP_ELRS_BACKPACK_SET_HEAD_TRACKING     0x030D  // enable/disable head-tracking forwarding packets to the TX
 #define MSP_ELRS_BACKPACK_SET_RTC               0x030E
 #define MSP_ELRS_BACKPACK_SET_DVR_NAME          0x030F
+// Netpack extension: per-frame delivery report emitted BACK to the TCP
+// client (dd-pits) after each ESP-NOW forward concludes. ESP-NOW unicast is
+// MAC-acknowledged, so "delivered" means the target goggle backpack's radio
+// received the frame. Payload: [uid:6][function:2 big-endian — the forwarded
+// frame's function][status:1 — 1=delivered, 0=failed][retries:1 — attempts
+// beyond the first]. A send skipped because the peer is on the absent-peer
+// cooldown reports failed with 0 retries.
+#define MSP_ELRS_NETPACK_SEND_REPORT            0x0310
 
 // incoming, packets originating from the VRx
 #define MSP_ELRS_BACKPACK_SET_MODE              0x0380  // enable wifi/binding mode

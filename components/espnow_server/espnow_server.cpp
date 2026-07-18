@@ -112,6 +112,26 @@ static void unsuppressPeer(const uint8_t *mac)
     }
 }
 
+// sendDeliveryReport queues a MSP_ELRS_NETPACK_SEND_REPORT back to the TCP
+// client (dd-pits): the MAC-ack outcome of one forwarded frame. Non-blocking
+// — a full ring drops the report rather than stalling the send loop.
+static void sendDeliveryReport(const uint8_t *uid, uint16_t function, bool delivered, uint8_t retries)
+{
+    mspPacket_t out;
+    out.reset();
+    out.makeResponse();
+    out.function = MSP_ELRS_NETPACK_SEND_REPORT;
+    for (int i = 0; i < 6; i++)
+        out.addByte(uid[i]);
+    out.addByte((function >> 8) & 0xFF);
+    out.addByte(function & 0xFF);
+    out.addByte(delivered ? 1 : 0);
+    out.addByte(retries);
+
+    if (xRingbufferSend(xRingReceivedEspnow, &out, sizeof(mspPacket_t), 0) != pdTRUE)
+        ESP_LOGD(TAG, "Delivery report dropped (ring full)");
+}
+
 static void sendInProgressResponse()
 {
     mspPacket_t out;
@@ -462,10 +482,13 @@ void runESPNOWServer(void *pvParameters)
                 {
                     // Skip peers on failure cooldown so an absent goggle can't
                     // head-of-line-block the live OSD queue (see suppression
-                    // note above).
+                    // note above). Still reported: the netpack KNOWS this peer
+                    // is unreachable, and dd-pits' delivery journal should say
+                    // failed, not unknown.
                     if (peerSuppressed(sendAddress))
                     {
                         ESP_LOGD(TAG, "Skipping send to unresponsive peer");
+                        sendDeliveryReport(sendAddress, packet->function, false, 0);
                         break;
                     }
 
@@ -488,6 +511,16 @@ void runESPNOWServer(void *pvParameters)
                         }
                         vTaskDelay(espnowDelay);
                     } while (++sendAttempt < CONFIG_ESPNOW_MAX_SEND_ATTEMPTS && !sendSuccess);
+
+                    // Report the concluded send back to the TCP client: one
+                    // report per forwarded frame, after the whole retry cycle.
+                    {
+                        uint8_t attempts = sendAttempt;
+                        if (sendStatus != ESP_OK)
+                            attempts = sendAttempt + 1; // broke before the ++
+                        sendDeliveryReport(sendAddress, packet->function,
+                                           sendSuccess != 0, attempts > 0 ? attempts - 1 : 0);
+                    }
 
                     if (sendSuccess)
                         unsuppressPeer(sendAddress);
