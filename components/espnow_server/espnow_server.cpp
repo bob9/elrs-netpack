@@ -202,12 +202,13 @@ static void registerPeer(uint8_t *address)
 #if CONFIG_ESPNOW_HIGH_RATE
     // ESP-NOW's default TX rate is 1Mbps: ~2ms of airtime per frame, a huge
     // collision cross-section against the pilots' RC links duty-cycling on
-    // the same band at race start. 24Mbps cuts a frame to ~0.15ms so it can
-    // slot into the gaps of the RC schedule. Range margin shrinks, but
-    // goggles are venue-distance, not long-range.
+    // the same band at race start. 11Mbps short-preamble cuts a frame to
+    // ~280us — 7x less exposure — while staying in the 802.11b family the
+    // goggle backpacks reliably ack (24Mbps OFDM delivered frames but the
+    // acks never came back, turning every send into phantom retries).
     esp_now_rate_config_t rate = {};
-    rate.phymode = WIFI_PHY_MODE_11G;
-    rate.rate = WIFI_PHY_RATE_24M;
+    rate.phymode = WIFI_PHY_MODE_11B;
+    rate.rate = WIFI_PHY_RATE_11M_S;
     if (esp_now_set_peer_rate_config(address, &rate) != ESP_OK)
         ESP_LOGW(TAG, "ESP-NOW peer rate config failed; using default 1Mbps");
 #endif
