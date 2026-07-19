@@ -11,6 +11,7 @@
 #include "net_config.h"
 #include "rtc_sync.h"
 #include "test_server.h"
+#include "log_server.h"
 #include "tasks.h"
 #include "msp.h"
 
@@ -23,6 +24,10 @@ TaskBufferParams espnow_params, tcp_server_params;
 
 extern "C" void app_main(void)
 {
+    // Mirror all log output into the RAM ring served at /log — installed
+    // first so startup lines are captured too
+    log_capture_init();
+
     // Create the buffers used for passing data across the different interfaces
     xRingReceivedSocket = xRingbufferCreateNoSplit(sizeof(mspPacket_t), 1000);
     xRingReceivedEspnow = xRingbufferCreateNoSplit(sizeof(mspPacket_t), 50);
@@ -64,6 +69,9 @@ extern "C" void app_main(void)
     // test messages at a goggle by bind phrase
     httpd_handle_t web_server = ota_server_start();
     test_server_start(web_server, xRingReceivedSocket);
+    // Log ring readable at "/log" — per-frame ESPNOW send timings without
+    // needing the USB serial cable
+    log_server_start(web_server);
 
     // Serial console on the USB port for setting network details (see 'netconfig')
     net_config_start_console();
