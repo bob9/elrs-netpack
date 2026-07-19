@@ -458,37 +458,35 @@ void runESPNOWServer(void *pvParameters)
                 }
                 case MSP_ELRS_SET_SEND_UID:
                 {
-                    ESP_LOGI(TAG, "Processing MSP_ELRS_SET_SEND_UID...");
                     uint8_t mode = packet->readByte();
 
-                    // Unregister current peer
-                    esp_now_del_peer(sendAddress);
-                    memset(&sendAddress, 0, sizeof(sendAddress));
-
-                    // Set target send address
+                    uint8_t target[6];
                     if (mode == 0x01)
                     {
-                        uint8_t receivedAddress[6];
-                        receivedAddress[0] = packet->readByte();
-                        receivedAddress[1] = packet->readByte();
-                        receivedAddress[2] = packet->readByte();
-                        receivedAddress[3] = packet->readByte();
-                        receivedAddress[4] = packet->readByte();
-                        receivedAddress[5] = packet->readByte();
-
-                        ESP_LOGI(TAG, "Setting to recieved address");
-                        memcpy(sendAddress, receivedAddress, 6);
+                        for (int i = 0; i < 6; i++)
+                            target[i] = packet->readByte();
                         // A MAC can only be unicast: an odd first byte makes
                         // esp_wifi_set_mac fail, and ESP_ERROR_CHECK would
                         // reboot the netpack mid-race. Mask it like the bind
                         // and startup paths do.
-                        sendAddress[0] = sendAddress[0] & ~0x01;
+                        target[0] = target[0] & ~0x01;
                     }
                     else
                     {
-                        ESP_LOGI(TAG, "Resetting to default address");
-                        memcpy(sendAddress, bindAddress, 6);
+                        memcpy(target, bindAddress, 6);
                     }
+
+                    // Already targeting this UID → keep the MAC. A MAC change
+                    // is disruptive: the first frame sent after one routinely
+                    // loses its send callback and burns a full timeout, so
+                    // set/reset pairs that land on the same UID (single-pilot
+                    // sessions back to back) must not touch the radio.
+                    if (memcmp(target, sendAddress, 6) == 0)
+                        break;
+
+                    // Unregister current peer
+                    esp_now_del_peer(sendAddress);
+                    memcpy(sendAddress, target, 6);
 
                     esp_err_t macErr = esp_wifi_set_mac(WIFI_IF_STA, sendAddress);
                     if (macErr != ESP_OK)
@@ -497,6 +495,11 @@ void runESPNOWServer(void *pvParameters)
                     if (sendAddress[0] != 0 || sendAddress[1] != 0 || sendAddress[2] != 0 ||
                         sendAddress[3] != 0 || sendAddress[4] != 0 || sendAddress[5] != 0)
                         registerPeer(sendAddress);
+
+                    // Let the driver settle so the next frame's send callback
+                    // isn't lost to the MAC change — 20ms here is far cheaper
+                    // than the 150ms callback timeout a lost frame costs.
+                    vTaskDelay(pdMS_TO_TICKS(20));
 
                     ESP_LOGI(TAG, "Send UID set to: [%d,%d,%d,%d,%d,%d]", sendAddress[0], sendAddress[1],
                              sendAddress[2], sendAddress[3], sendAddress[4], sendAddress[5]);
