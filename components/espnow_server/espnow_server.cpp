@@ -476,6 +476,14 @@ void runESPNOWServer(void *pvParameters)
                         memcpy(target, bindAddress, 6);
                     }
 
+                    // An unbound netpack has no default identity to reset to
+                    // (an all-zero MAC is invalid anyway) — keep the last
+                    // pilot's UID applied so the next session to the same
+                    // pilot needs no MAC change at all.
+                    if (target[0] == 0 && target[1] == 0 && target[2] == 0 &&
+                        target[3] == 0 && target[4] == 0 && target[5] == 0)
+                        break;
+
                     // Already targeting this UID → keep the MAC. A MAC change
                     // is disruptive: the first frame sent after one routinely
                     // loses its send callback and burns a full timeout, so
