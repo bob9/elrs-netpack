@@ -120,6 +120,29 @@ static void peerAcked(const uint8_t *mac)
         p->used = false;
 }
 
+// espnowFuncName maps the MSP functions we forward to short log labels so
+// the per-frame send log reads as "osd"/"rtc"/"dvr" instead of hex.
+static const char *espnowFuncName(uint16_t function)
+{
+    switch (function)
+    {
+    case MSP_ELRS_SET_OSD:
+        return "osd";
+    case MSP_ELRS_BACKPACK_SET_RTC:
+        return "rtc";
+    case MSP_ELRS_BACKPACK_SET_DVR_NAME:
+        return "dvr";
+    case MSP_ELRS_BACKPACK_SET_CHANNEL_INDEX:
+        return "channel";
+    case MSP_ELRS_BACKPACK_SET_FREQUENCY:
+        return "freq";
+    case MSP_ELRS_BACKPACK_SET_RECORDING_STATE:
+        return "rec";
+    default:
+        return NULL;
+    }
+}
+
 // sendDeliveryReport queues a MSP_ELRS_NETPACK_SEND_REPORT back to the TCP
 // client (dd-pits): the MAC-ack outcome of one forwarded frame. Non-blocking
 // — a full ring drops the report rather than stalling the send loop.
@@ -496,7 +519,9 @@ void runESPNOWServer(void *pvParameters)
                     // above): every frame is still transmitted and reported,
                     // but an absent goggle can't head-of-line-block the live
                     // OSD queue.
-                    uint8_t maxAttempts = peerProbing(sendAddress) ? 1 : CONFIG_ESPNOW_MAX_SEND_ATTEMPTS;
+                    bool probing = peerProbing(sendAddress);
+                    uint8_t maxAttempts = probing ? 1 : CONFIG_ESPNOW_MAX_SEND_ATTEMPTS;
+                    TickType_t sendStart = xTaskGetTickCount();
 
                     sendAttempt = 0;
                     sendSuccess = 0; // never inherit the previous packet's result
@@ -545,7 +570,24 @@ void runESPNOWServer(void *pvParameters)
                     else if (sendStatus == ESP_OK)
                         peerSendFailed(sendAddress);
 
-                    ESP_LOGI(TAG, "ESPNOW message send attempts: %d", sendAttempt);
+                    // Per-frame send log: what was sent, to whom, the radio
+                    // outcome, and how long the retry cycle held the queue.
+                    {
+                        uint32_t elapsedMs = (xTaskGetTickCount() - sendStart) * portTICK_PERIOD_MS;
+                        const char *fn = espnowFuncName(packet->function);
+                        char fnBuf[8];
+                        if (fn == NULL)
+                        {
+                            snprintf(fnBuf, sizeof(fnBuf), "0x%04X", packet->function);
+                            fn = fnBuf;
+                        }
+                        ESP_LOGI(TAG, "ESPNOW %s to %02X:%02X:%02X:%02X:%02X:%02X: %s in %lums (%d attempt%s%s)",
+                                 fn, sendAddress[0], sendAddress[1], sendAddress[2],
+                                 sendAddress[3], sendAddress[4], sendAddress[5],
+                                 sendSuccess ? "acked" : "FAILED", (unsigned long)elapsedMs,
+                                 sendAttempt, sendAttempt == 1 ? "" : "s",
+                                 probing ? ", probe" : "");
+                    }
                     break;
                 }
                 }
