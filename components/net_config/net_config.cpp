@@ -14,11 +14,13 @@
 #define STORAGE_NETMASK_KEY "net_mask"
 #define STORAGE_GATEWAY_KEY "net_gw"
 
-// The netpack ALWAYS uses a static IP — DHCP is intentionally disabled so a
+// The netpack defaults to a static IP — DHCP is off in standard builds so a
 // race timer / venue agent can always reach it at a fixed, known address. The
 // address itself is still overridable at runtime via `netconfig static <ip>`.
-// Defaults are hardcoded (with a Kconfig fallback) so this holds regardless of
-// the build's CONFIG_USE_STATIC_IP state.
+// The MODE is a build-time choice only: menuconfig -> "TCP Socket Server
+// options" -> disable USE_STATIC_IP to build a DHCP firmware (for setups
+// where the router pins the address by MAC reservation); runtime NVS state
+// can never flip the mode, so a stale saved setting can't strand the device.
 #ifndef CONFIG_STATIC_IP_ADDR
 #define CONFIG_STATIC_IP_ADDR "192.168.1.195"
 #endif
@@ -33,7 +35,11 @@ static const char *TAG = "net_config";
 
 static void net_config_defaults(net_config_t *cfg)
 {
-    cfg->use_static = true; // DHCP disabled — always static
+#if CONFIG_USE_STATIC_IP
+    cfg->use_static = true;
+#else
+    cfg->use_static = false; // DHCP build
+#endif
     strlcpy(cfg->ip, CONFIG_STATIC_IP_ADDR, sizeof(cfg->ip));
     strlcpy(cfg->netmask, CONFIG_STATIC_NETMASK, sizeof(cfg->netmask));
     strlcpy(cfg->gateway, CONFIG_STATIC_GATEWAY, sizeof(cfg->gateway));
@@ -47,10 +53,15 @@ void net_config_load(net_config_t *cfg)
     if (nvs_open(STORAGE_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
         return;
 
-    // DHCP is disabled: the saved use_static flag is intentionally NOT read, so
-    // a stale "dhcp" setting can never force DHCP. Only the address is
-    // overridable via `netconfig static <ip>`.
+    // The mode is fixed at build time: the saved use_static flag is
+    // intentionally NOT read, so a stale runtime setting can never flip a
+    // static build to DHCP (or vice versa). Only the address is overridable
+    // via `netconfig static <ip>`.
+#if CONFIG_USE_STATIC_IP
     cfg->use_static = true;
+#else
+    cfg->use_static = false;
+#endif
 
     size_t len = sizeof(cfg->ip);
     nvs_get_str(handle, STORAGE_IP_KEY, cfg->ip, &len);
@@ -119,8 +130,13 @@ static int cmd_netconfig(int argc, char **argv)
 
     if (strcmp(argv[1], "dhcp") == 0)
     {
-        printf("DHCP is disabled on the netpack — it always uses a static IP.\n"
-               "Use 'netconfig static <ip>' to change the address.\n");
+#if CONFIG_USE_STATIC_IP
+        printf("This build uses a static IP (DHCP off). Use 'netconfig static <ip>'\n"
+               "to change the address, or rebuild with USE_STATIC_IP disabled in\n"
+               "menuconfig for a DHCP firmware.\n");
+#else
+        printf("This is a DHCP build — the address comes from the router.\n");
+#endif
         return 0;
     }
 
@@ -177,7 +193,11 @@ static int cmd_netconfig(int argc, char **argv)
     printf("Usage:\n"
            "  netconfig                                 Show current settings\n"
            "  netconfig static <ip> [netmask] [gateway] Set the static IP address\n"
-           "  (DHCP is disabled — the netpack always uses a static IP)\n");
+#if CONFIG_USE_STATIC_IP
+           "  (static-IP build: the mode is fixed; only the address changes)\n");
+#else
+           "  (DHCP build: the saved address only applies to static builds)\n");
+#endif
     return 1;
 }
 

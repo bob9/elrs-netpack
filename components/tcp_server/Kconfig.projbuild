@@ -6,14 +6,17 @@ menu "TCP Socket Server options"
             Set TCP server listening port.
 
     config USE_STATIC_IP
-        bool "Use static IP address instead of DHCP (default)"
-        default n
+        bool "Use a static IP address (recommended) instead of DHCP"
+        default y
         help
-            Default network mode baked into the firmware. If disabled, DHCP is
-            used to obtain an IP address automatically. Either way, the mode and
-            address can be changed at runtime without reflashing: connect to the
-            USB serial console and use the 'netconfig' command. Runtime settings
-            are stored in NVS and override these defaults.
+            Network mode baked into the firmware. Static IP is the supported
+            default: the timing computer / dd-pits agent must always find the
+            netpack at a fixed, known address. Disable ONLY to build a DHCP
+            firmware for setups where the router pins the address by MAC
+            reservation. In static builds the address (not the mode) can be
+            changed at runtime without reflashing via the USB serial console
+            'netconfig static <ip>' command (stored in NVS, overrides the
+            defaults below).
 
     config STATIC_IP_ADDR
         string "Default static IP address"
