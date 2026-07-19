@@ -7,11 +7,14 @@ menu "ESPNOW Server options"
             ESPNOW message
 
     config ESPNOW_SEND_DELAY
-        int "Delay between ESPNOW send attempts"
-        default 0
+        int "Delay (ms) before each ESPNOW retry attempt"
+        default 25
         help
-            The amount of artifical delay between sending
-            ESPNOW messages 
+            Milliseconds to wait before each RETRY of an unacked
+            ESPNOW frame. Spacing retries decorrelates them from
+            bursty 2.4GHz interference (e.g. the pilots' ELRS RC
+            links at race start). No delay is added before the
+            first attempt, so acked frames see zero added latency.
 
     config ESPNOW_CHANNEL
         int "Channel"
