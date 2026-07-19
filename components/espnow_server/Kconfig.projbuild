@@ -16,6 +16,16 @@ menu "ESPNOW Server options"
             links at race start). No delay is added before the
             first attempt, so acked frames see zero added latency.
 
+    config ESPNOW_HIGH_RATE
+        bool "Send ESPNOW frames at 24Mbps instead of the 1Mbps default"
+        default y
+        help
+            Shortens each frame's airtime ~15x so OSD traffic can slot
+            into the gaps of the pilots' 2.4GHz RC-link schedule at race
+            start, at the cost of some receive-sensitivity margin.
+            Disable if goggles at the far end of a large venue stop
+            receiving messages.
+
     config ESPNOW_CHANNEL
         int "Channel"
         default 1
